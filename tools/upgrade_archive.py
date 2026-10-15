@@ -312,7 +312,7 @@ page_func = r'''
 '''
 app = replace_once(app, "  function pageDashboard(data) {", page_func + "\n  function pageDashboard(data) {", "assistant view")
 app = replace_once(app, "    let content = pageDashboard(data);", "    let content = pageDashboard(data);\n    if (state.page === 'assistant') content = pageAssistant(data);", "assistant page routing")
-bind_anchor = "  function bindPage() {"
+bind_anchor = "  function bindCommon() {"
 bind_code = r'''
     const assistantForm = $('#assistantForm');
     assistantForm?.addEventListener('submit', async (event) => {
