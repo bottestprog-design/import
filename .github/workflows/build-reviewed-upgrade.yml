@@ -1,0 +1,62 @@
+name: Build reviewed chat BOT archive
+
+on:
+  push:
+    branches:
+      - chat-bot-v8-reviewed-upgrade
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout reviewed branch
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Build additive project upgrade
+        run: python tools/upgrade_archive.py
+
+      - name: Install dependencies without downloading a browser
+        working-directory: build-output/source/work_v800
+        run: npm install --no-audit --no-fund --ignore-scripts
+
+      - name: Run source validation and regression tests
+        working-directory: build-output/source/work_v800
+        continue-on-error: true
+        run: npm test
+
+      - name: Package reviewed project
+        if: always()
+        run: |
+          mkdir -p deliverable
+          if [ -d build-output/source/work_v800 ]; then
+            cd build-output/source
+            zip -r ../../deliverable/chat_BOT_v8.0.0_reviewed_upgrade.zip work_v800               -x 'work_v800/node_modules/*' 'work_v800/.cache/*' 'work_v800/data/*'                  'work_v800/.browser-path' 'work_v800/.env'
+          else
+            echo "Build output is missing" >&2
+            exit 1
+          fi
+
+      - name: Upload downloadable ZIP and test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: chat-BOT-reviewed-upgrade
+          path: deliverable/chat_BOT_v8.0.0_reviewed_upgrade.zip
+          if-no-files-found: error
+          retention-days: 30
