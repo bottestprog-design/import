@@ -78,7 +78,7 @@ console.log('regression: ok');
 """, encoding="utf-8", newline="\n")
 
 # Offline assistant logic. No model provider, API key, cloud request, or account required.
-assistant_source = r'''\"use strict\";
+assistant_source = r'''"use strict";
 const crypto = require('node:crypto');
 
 const NAV = [
@@ -431,7 +431,7 @@ scripts["verify"] = "node --check server.js && node --check public/app.js && nod
 scripts["test"] = "npm run verify"
 write_text("package.json", json.dumps(pkg, ensure_ascii=False, indent=2) + "\n")
 
-assistant_test = r'''\"use strict\";
+assistant_test = r'''"use strict";
 const assert = require('node:assert/strict');
 const assistant = require('../src/local_assistant');
 const sample = {
