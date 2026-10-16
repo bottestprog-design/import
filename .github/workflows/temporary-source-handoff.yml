@@ -1,0 +1,25 @@
+name: Temporary source ZIP handoff
+on:
+  push:
+    branches:
+      - chatbot-merge-temp-20261015
+permissions:
+  contents: read
+jobs:
+  handoff:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore and verify the requested source archive
+        run: |
+          set -euo pipefail
+          base64 --decode "source-handoff/chat-BOT-v4.1-v8-conversational-wizard-8.4.7.zip.b64" > "chat-BOT-v4.1-v8-conversational-wizard-8.4.7.zip"
+          test -s "chat-BOT-v4.1-v8-conversational-wizard-8.4.7.zip"
+          unzip -t "chat-BOT-v4.1-v8-conversational-wizard-8.4.7.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chat-BOT-v4.1-v8-conversational-wizard-8.4.7-source
+          path: "chat-BOT-v4.1-v8-conversational-wizard-8.4.7.zip"
+          if-no-files-found: error
+          retention-days: 1
