@@ -1,0 +1,24 @@
+name: Temporary PDF2HTML source handoff
+on:
+  push:
+    branches:
+      - pdf2html-source-handoff-20261018
+permissions:
+  contents: read
+jobs:
+  handoff:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify source archive
+        run: |
+          set -euo pipefail
+          test -s "pdf2html-studio-1.1.0.zip"
+          unzip -t "pdf2html-studio-1.1.0.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pdf2html-studio-1.1.0-source
+          path: "pdf2html-studio-1.1.0.zip"
+          if-no-files-found: error
+          retention-days: 1
