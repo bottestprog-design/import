@@ -1,0 +1,55 @@
+name: Audit WhatsApp chatbot archive
+on:
+  push:
+    branches:
+      - repair/v9.8.1-audit
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout archive repository
+        uses: actions/checkout@v4
+      - name: Extract v9.8.0 source archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/chatbot-audit
+          unzip -q "chat-BOT-v9.8.0-whatsapp-import-photo-send-fixes (1).zip" -d /tmp/chatbot-audit
+          test -f /tmp/chatbot-audit/chat-BOT-v9.8.0/package.json
+          find /tmp/chatbot-audit/chat-BOT-v9.8.0 -type f | sort > /tmp/chatbot-audit/files.txt
+          echo "FILES:"
+          cat /tmp/chatbot-audit/files.txt
+      - name: Install test dependencies
+        id: deps
+        shell: bash
+        run: |
+          cd /tmp/chatbot-audit/chat-BOT-v9.8.0
+          npm install --no-audit --no-fund --ignore-scripts
+      - name: Run project verification suite
+        id: tests
+        continue-on-error: true
+        shell: bash
+        run: |
+          cd /tmp/chatbot-audit/chat-BOT-v9.8.0
+          npm test 2>&1 | tee /tmp/chatbot-audit/npm-test.log
+      - name: Package source and audit logs
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p /tmp/chatbot-audit/artifact
+          cp -a /tmp/chatbot-audit/chat-BOT-v9.8.0 /tmp/chatbot-audit/artifact/
+          cp /tmp/chatbot-audit/files.txt /tmp/chatbot-audit/artifact/ 2>/dev/null || true
+          cp /tmp/chatbot-audit/npm-test.log /tmp/chatbot-audit/artifact/ 2>/dev/null || true
+      - name: Upload extracted project for local repair
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: chatbot-v9-audit-source
+          path: /tmp/chatbot-audit/artifact/
+          if-no-files-found: error
+          retention-days: 7
