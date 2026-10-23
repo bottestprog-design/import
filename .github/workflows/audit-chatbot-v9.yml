@@ -14,7 +14,7 @@ jobs:
     steps:
       - name: Checkout archive repository
         uses: actions/checkout@v4
-      - name: Extract v9.8.0 source archive
+      - name: Extract project and reference archives
         shell: bash
         run: |
           set -euo pipefail
@@ -22,9 +22,11 @@ jobs:
           unzip -q "chat-BOT-v9.8.0-whatsapp-import-photo-send-fixes (1).zip" -d /tmp/chatbot-audit
           test -f /tmp/chatbot-audit/chat-BOT-v9.8.0/package.json
           unzip -q "chat-BOT-v4.1-v8-complete-repair-8.6.0.zip" -d /tmp/chatbot-audit
+          mkdir -p /tmp/chatbot-audit/reference-v8.6.0
+          for item in package.json package-lock.json server.js run.py public src test scripts .env.example .gitignore README.md; do
+            if [ -e "/tmp/chatbot-audit/$item" ]; then cp -a "/tmp/chatbot-audit/$item" /tmp/chatbot-audit/reference-v8.6.0/; fi
+          done
           find /tmp/chatbot-audit -type f -not -path '*/node_modules/*' | sort > /tmp/chatbot-audit/files.txt
-          echo "FILES:"
-          cat /tmp/chatbot-audit/files.txt
       - name: Install test dependencies
         run: |
           cd /tmp/chatbot-audit/chat-BOT-v9.8.0
@@ -42,8 +44,9 @@ jobs:
         run: |
           mkdir -p /tmp/chatbot-audit/artifact
           cp -a /tmp/chatbot-audit/chat-BOT-v9.8.0 /tmp/chatbot-audit/artifact/
-          cp -a /tmp/chatbot-audit/chat-BOT-v8.6.0 /tmp/chatbot-audit/artifact/ 2>/dev/null || true
+          cp -a /tmp/chatbot-audit/reference-v8.6.0 /tmp/chatbot-audit/artifact/
           find /tmp/chatbot-audit/artifact -type d -name node_modules -prune -exec rm -rf {} +
+          rm -rf /tmp/chatbot-audit/artifact/chat-BOT-v9.8.0/data
           cp /tmp/chatbot-audit/files.txt /tmp/chatbot-audit/artifact/ 2>/dev/null || true
           cp /tmp/chatbot-audit/npm-test.log /tmp/chatbot-audit/artifact/ 2>/dev/null || true
       - name: Upload extracted projects for local repair
