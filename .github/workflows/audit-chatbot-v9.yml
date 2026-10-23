@@ -21,12 +21,11 @@ jobs:
           mkdir -p /tmp/chatbot-audit
           unzip -q "chat-BOT-v9.8.0-whatsapp-import-photo-send-fixes (1).zip" -d /tmp/chatbot-audit
           test -f /tmp/chatbot-audit/chat-BOT-v9.8.0/package.json
-          find /tmp/chatbot-audit/chat-BOT-v9.8.0 -type f | sort > /tmp/chatbot-audit/files.txt
+          unzip -q "chat-BOT-v4.1-v8-complete-repair-8.6.0.zip" -d /tmp/chatbot-audit
+          find /tmp/chatbot-audit -type f -not -path '*/node_modules/*' | sort > /tmp/chatbot-audit/files.txt
           echo "FILES:"
           cat /tmp/chatbot-audit/files.txt
       - name: Install test dependencies
-        id: deps
-        shell: bash
         run: |
           cd /tmp/chatbot-audit/chat-BOT-v9.8.0
           npm install --no-audit --no-fund --ignore-scripts
@@ -43,9 +42,11 @@ jobs:
         run: |
           mkdir -p /tmp/chatbot-audit/artifact
           cp -a /tmp/chatbot-audit/chat-BOT-v9.8.0 /tmp/chatbot-audit/artifact/
+          cp -a /tmp/chatbot-audit/chat-BOT-v8.6.0 /tmp/chatbot-audit/artifact/ 2>/dev/null || true
+          find /tmp/chatbot-audit/artifact -type d -name node_modules -prune -exec rm -rf {} +
           cp /tmp/chatbot-audit/files.txt /tmp/chatbot-audit/artifact/ 2>/dev/null || true
           cp /tmp/chatbot-audit/npm-test.log /tmp/chatbot-audit/artifact/ 2>/dev/null || true
-      - name: Upload extracted project for local repair
+      - name: Upload extracted projects for local repair
         if: always()
         uses: actions/upload-artifact@v4
         with:
