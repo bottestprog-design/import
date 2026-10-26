@@ -1,0 +1,31 @@
+name: Validate repaired chat BOT archive
+on:
+  push:
+    branches:
+      - repair/v9.16.5
+  workflow_dispatch:
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check archive integrity
+        run: unzip -t chat-BOT-v9.16.5-repaired.zip
+      - name: Unpack project
+        run: mkdir project && unzip -q chat-BOT-v9.16.5-repaired.zip -d project
+      - name: Check JavaScript syntax
+        run: find project -type f -name '*.js' -print0 | xargs -0 -n1 node --check
+      - name: Validate JSON files
+        run: python -c "import json,pathlib; files=list(pathlib.Path('project').rglob('*.json')); [json.loads(p.read_text(encoding='utf-8-sig')) for p in files]; print(f'{len(files)} JSON files parse successfully')"
+      - name: Compile Python files
+        run: python -m compileall -q project
+      - name: Install locked Node dependencies
+        working-directory: project
+        run: npm ci --no-audit --no-fund
+      - name: Run strict verification suite
+        working-directory: project
+        run: npm run test:strict
