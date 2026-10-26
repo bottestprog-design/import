@@ -37,7 +37,7 @@ jobs:
                   patched[path] = True
 
           edit("src/store.js", lambda text: re.sub(
-              r"const APP_VERSION = ['\"]9\\.16\\.4['\"];", "const APP_VERSION = '9.16.5';", text))
+              r"const APP_VERSION = ['\"]9\.16\.4['\"];", "const APP_VERSION = '9.16.5';", text))
 
           edit("src/integration-hub.js", lambda text: text.replace(
               "chat-BOT-IntegrationHub/9.16.4", "chat-BOT-IntegrationHub/9.16.5"))
@@ -68,7 +68,7 @@ jobs:
                   raise SystemExit("Required setup script missing: " + path)
               text = members[path].decode("utf-8-sig")
               lines = text.splitlines()
-              cleaned = [line for line in lines if not re.match(r"^\\s*Read-Host\\b", line, re.I)]
+              cleaned = [line for line in lines if not re.match(r"^\s*Read-Host\b", line, re.I)]
               newer = "\n".join(cleaned).rstrip() + "\n"
               if newer != text:
                   members[path] = newer.encode("utf-8")
