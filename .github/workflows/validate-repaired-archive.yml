@@ -17,6 +17,15 @@ jobs:
         run: unzip -t chat-BOT-v9.16.5-repaired.zip
       - name: Unpack project
         run: mkdir project && unzip -q chat-BOT-v9.16.5-repaired.zip -d project
+      - name: Inspect failing regression assumptions
+        run: |
+          sed -n '1,115p' project/test/text-to-speech.js
+          sed -n '48,78p' project/test/settings-endpoint-integration.js
+          grep -R -n "latest release documents the current integrated" project/test || true
+          grep -R -n "ALL_VOICE_SETUP_MUST_RUN_WHISPER_PIPER_AND_LOCAL_PROOFREADER" project || true
+          grep -R -n "APP_VERSION\|9.16.4" project/src project/server.js project/test/whatsapp-restoration-ui.js | head -80 || true
+          sed -n '1,130p' project/test/whatsapp-restoration-ui.js
+          sed -n '1,100p' project/test/static.js
       - name: Check JavaScript syntax
         run: find project -type f -name '*.js' -print0 | xargs -0 -n1 node --check
       - name: Validate JSON files
