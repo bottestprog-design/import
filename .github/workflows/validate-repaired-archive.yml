@@ -87,6 +87,253 @@ jobs:
               ).encode("utf-8")
               patched[audit_path] = True
 
+          # Focused runtime fixes shipped inside the release archive.
+          def patch_server(text):
+              old = """    if (audioType) {
+                  assistantMessage = await withVoiceTranscript(id, msg, { selfChat: true });"""
+              new = """    if (audioType && voiceBootstrapTask) {
+                  try {
+                    const voiceStatus = await audioTranscriber.status();
+                    if (!voiceStatus.ready) {
+                      try { audioTranscriber.rememberIncoming(id, msg); } catch {}
+                      await withTimeoutPromise(voiceBootstrapTask, 50 * 60 * 1000, 'إعداد محركات الصوت المحلية');
+                    }
+                  } catch (error) { log(id, 'WARN', 'تعذر انتظار إعداد الصوت في محادثة النفس: ' + safeError(error)); }
+                }
+                if (audioType) {
+                  assistantMessage = await withVoiceTranscript(id, msg, { selfChat: true });"""
+              if old not in text: raise SystemExit("Missing owner voice path")
+              text = text.replace(old, new, 1)
+              old = """    let assistantMessage = msg;
+                const audioType = ['audio','ptt','voice'].includes(String(msg?.type || '').toLowerCase())"""
+              new = """    if (msg?.hasMedia === true && typeof msg.downloadMedia === 'function') {
+                try {
+                  const stored = await ownerAssistant.rememberIncomingMedia(id, msg);
+                  if (stored) log(id, 'INFO', 'تم حفظ مرفق المالك محليًا: ' + stored.filename);
+                } catch (error) { log(id, 'WARN', 'تعذر حفظ مرفق محادثة النفس: ' + safeError(error)); }
+              }
+              let assistantMessage = msg;
+              const audioType = ['audio','ptt','voice'].includes(String(msg?.type || '').toLowerCase())"""
+              if old not in text: raise SystemExit("Missing owner media capture path")
+              # insert into the self-chat listener, not another occurrence
+              index = text.index("whatsapp.on('message_create'")
+              pos = text.find(old, index)
+              if pos < 0: raise SystemExit("Could not locate self-chat media capture")
+              return text[:pos] + text[pos:].replace(old, new, 1)
+          edit("server.js", patch_server)
+
+          def patch_restore(text):
+              old = """    const restoreRestartIds = restoredIds.filter(sessionId => {
+                try { return priorActiveSessionIds.includes(sessionId) || Boolean(store.loadSession(sessionId).settings.autoStartSession) || whatsapp.hasSavedAuth(sessionId); }
+                catch { return priorActiveSessionIds.includes(sessionId); }
+              });
+              scheduleSavedSessionRestart(700, 'الاستعادة', restoreRestartIds.length ? restoreRestartIds : null);"""
+              new = """    // Start every restored session so missing WhatsApp authentication triggers the QR/pairing flow.
+              const restoreRestartIds = [...restoredIds];
+              scheduleSavedSessionRestart(700, 'الاستعادة', restoreRestartIds);"""
+              if old not in text: raise SystemExit("Missing restore restart selection")
+              return text.replace(old, new, 1)
+          edit("server.js", patch_restore)
+
+          def patch_recipient_pause(text):
+              start = text.index("function recipientIsPaused(session, chatId) {")
+              end = text.index("\n}", start) + 2
+              newer = r'''function recipientIsPaused(session, chatId) {
+            const id = String(chatId || '').trim().toLowerCase();
+            if (!id) return false;
+            const paused = item => Boolean(item && (item.enabled === false || item.paused === true || item.stopped === true));
+            const groups = Array.isArray(session?.groups) ? session.groups : [];
+            const group = groups.find(item => [item.gid, item.chatId, item.whatsappJid, item.jid]
+              .some(value => String(value || '').trim().toLowerCase() === id));
+            if (group) return paused(group);
+            let person = recipientForChat(session, id);
+            if (person) return paused(person);
+            const match = id.match(/^(\d{5,25})@(?:c\.us|lid)$/i);
+            const digits = match?.[1] || (/^\d{5,25}$/.test(id) ? id : '');
+            if (!digits) return false;
+            const people = Array.isArray(session?.recipients) ? session.recipients : [];
+            person = people.find(item => [item.e164, item.phone, item.digits, item.number, item.international, item.whatsappJid, item.chatId, item.jid, item.lid, item.lidJid].some(value => {
+              const candidate = String(value || '').trim().toLowerCase();
+              if (candidate === id) return true;
+              if (/^\d{5,25}@(?:c\.us|lid)$/i.test(candidate)) return candidate.slice(0, candidate.lastIndexOf('@')) === digits;
+              return candidate.replace(/\D/g, '') === digits;
+            })) || null;
+            return paused(person);
+          }'''
+              return text[:start] + newer + text[end:]
+          edit("src/recipient-replies.js", patch_recipient_pause)
+
+          def patch_owner(text):
+              for line in [
+                  "const fs = require('node:fs');",
+                  "const path = require('node:path');",
+                  "const { MEDIA_EXT, MIME, safePath, uniqueFileName } = require('./media');"
+              ]:
+                  if line not in text: text = text.replace("'use strict';", "'use strict';\n" + line, 1)
+              text = text.replace("String(process.env.TTS_REQUIRE_PROOFREAD || 'true')", "String(process.env.TTS_REQUIRE_PROOFREAD || 'false')")
+              text = text.replace("const proofreadRequired = s.settings?.ttsRequireProofread !== false;",
+                  "const proofreadRequired = s.settings?.ttsRequireProofread === undefined ? !/^(?:0|false|no|off)$/i.test(String(process.env.TTS_REQUIRE_PROOFREAD || 'false')) : s.settings.ttsRequireProofread !== false;")
+              marker = "  registeredChatTargets(session, selfChatId = '') {"
+              methods = r'''  async rememberIncomingMedia(id, msg) {
+              if (!msg || msg.hasMedia !== true || typeof msg.downloadMedia !== 'function') return null;
+              const media = await msg.downloadMedia();
+              const encoded = String(media?.data || '').replace(/\s+/g, '');
+              if (!encoded || !/^[A-Za-z0-9+/]*={0,2}$/.test(encoded) || encoded.length % 4 === 1) throw new Error('بيانات مرفق WhatsApp غير صالحة.');
+              const bytes = Buffer.from(encoded, 'base64');
+              if (!bytes.length || bytes.length > 100 * 1024 * 1024) throw new Error('حجم المرفق يجب ألا يتجاوز 100 MB.');
+              const type = String(msg.type || '').toLowerCase();
+              const mime = String(media.mimetype || msg?._data?.mimetype || '').split(';')[0].toLowerCase();
+              const original = String(media.filename || msg?._data?.filename || '').trim();
+              const extName = path.extname(original).toLowerCase();
+              const extMime = Object.keys(MIME).find(ext => MIME[ext] === mime) || '';
+              const ext = MEDIA_EXT.has(extName) ? extName : extMime;
+              if (!ext || !MEDIA_EXT.has(ext)) throw new Error('نوع المرفق غير مدعوم للحفظ المحلي: ' + (mime || 'غير معروف'));
+              const directory = this.store.getPaths(id).images;
+              if (!directory) throw new Error('مجلد الوسائط المحلية غير متاح لهذه الجلسة.');
+              fs.mkdirSync(directory, { recursive: true });
+              const filename = uniqueFileName(directory, type === 'sticker' ? 'sticker' : (path.parse(original).name || type || 'media'), ext);
+              fs.writeFileSync(safePath(directory, filename), bytes, { mode: 0o600, flag: 'wx' });
+              const fresh = this.session(id);
+              fresh.ownerAssistant.recent.push({ at: new Date().toISOString(), type: 'owner-media-saved', filename, mimetype: mime, bytes: bytes.length });
+              this.save(fresh);
+              return { filename, mimetype: mime, bytes: bytes.length, isSticker: type === 'sticker' };
+            }
+            async promptSavedMediaPicker(id, session) {
+              const flow = session.ownerAssistant?.flow, data = flow?.data || {};
+              if (!flow || flow.type !== 'send-media') return false;
+              const files = typeof this.delivery?.files === 'function' ? this.delivery.files(id) : [];
+              if (!files.length) {
+                session.ownerAssistant.flow = null; this.save(session);
+                await this.reply(id, 'لا توجد ملفات محفوظة قابلة للإرسال. أرسل صورة أو ستيكر أو ملفًا إلى محادثة النفس أولًا؛ سيُحفظ محليًا لتختاره.');
+                return false;
+              }
+              const requested = normalize(data.requestedName || '');
+              const exact = requested ? files.filter(f => normalize(f.filename) === requested || normalize(f.id) === requested) : [];
+              const partial = requested && !exact.length ? files.filter(f => normalize(f.filename).includes(requested)) : [];
+              const matches = exact.length ? exact : partial;
+              if (matches.length === 1) {
+                const file = matches[0];
+                data.file = { id: file.id, filename: file.filename, ext: file.ext, size: file.size, isImage: file.isImage, isVideo: file.isVideo, isAudio: file.isAudio };
+                data.asSticker = data.asSticker || /^sticker_/i.test(file.filename);
+                flow.step = 'confirm'; this.save(session);
+                await this.reply(id, 'مراجعة الملف قبل الإرسال:\nإلى: ' + data.target.label + '\nالملف: ' + file.filename + ' (' + Math.ceil(Number(file.size || 0) / 1024) + ' KB)\n' + (data.asSticker ? 'سيُرسل كستيكر.' : file.isImage ? 'سيُرسل كصورة.' : file.isVideo ? 'سيُرسل كفيديو.' : file.isAudio ? 'سيُرسل كملف صوتي.' : 'سيُرسل كمستند.') + '\nاكتب «تأكيد الإرسال» أو «هو ده»، أو «إلغاء».');
+                return true;
+              }
+              flow.step = 'choose-file'; this.save(session);
+              const listing = files.map((f, i) => (i + 1) + '. ' + f.filename + ' — ' + Math.ceil(Number(f.size || 0) / 1024) + ' KB — ' + (f.isImage ? 'صورة' : f.isVideo ? 'فيديو' : f.isAudio ? 'صوت' : 'ملف')).join('\n');
+              await this.reply(id, 'اختر الملف لإرساله إلى «' + data.target.label + '» بكتابة رقمه أو اسمه كاملًا:\n' + listing + (requested ? '\nلم أجد تطابقًا وحيدًا مع «' + data.requestedName + '». اختر من القائمة.' : '') + '\nبعد الاختيار سأعرض الملف للتأكيد قبل الإرسال.');
+              return true;
+            }
+          '''
+              if marker not in text: raise SystemExit("Missing saved-media method marker")
+              text = text.replace(marker, methods + marker, 1)
+              marker = "    if (/(?:ارسل|ابعث|ابعت|ارسال|ابعاث).*(?:رساله|رسالة)|^(?:ارسل رسالة|ابعت رسالة|ارسال رساله)$/u.test(p)) {"
+              command = r'''    const mediaRequest = p.match(/^(?:ارسل|ابعث|ابعت|ابعثلي|ابعتلي)\s+(?:من\s+)?(?:الملفات المحفوظه|الملفات المحفوظة|الوسائط|الملفات|الملف|ملف|الصوره|صوره|الصورة|صورة|ستيكر|ملصق)(?:\s+(.+))?$/u);
+              if (mediaRequest) {
+                let requestedName = String(mediaRequest[1] || '').trim(), targetQuery = '';
+                const parts = requestedName.match(/^(?:(.*?)\s+)?(?:الى|ل)\s+(.+)$/u);
+                if (parts) { requestedName = String(parts[1] || '').trim(); targetQuery = String(parts[2] || '').trim(); }
+                assistant.flow = { type: 'send-media', step: 'target', data: { requestedName, targetQuery, asSticker: /ستيكر|ملصق/u.test(p) } };
+                if (targetQuery) {
+                  try {
+                    assistant.flow.data.target = await this.resolveTarget(s, targetQuery);
+                    assistant.flow.step = 'choose-file'; this.save(s);
+                    await this.promptSavedMediaPicker(id, s);
+                  } catch (error) {
+                    assistant.flow.step = 'target'; assistant.flow.data.targetQuery = '';
+                    this.save(s);
+                    await this.reply(id, error.message + '\nاكتب اسم المستلم المحفوظ ثم اختر الملف. اكتب «إلغاء» للتراجع.');
+                  }
+                } else {
+                  this.save(s);
+                  await this.reply(id, requestedName ? 'سأبحث عن «' + requestedName + '». لمن تريد إرساله؟ اكتب اسم المستلم المحفوظ.' : 'لمن تريد إرسال الملف المحفوظ؟ اكتب اسم الشخص أو المجموعة المحفوظة، وبعدها سأعرض الملفات للاختيار.');
+                }
+                return { handled: true, action: 'send-saved-media-started' };
+              }
+              '''
+              if marker not in text: raise SystemExit("Missing send command marker")
+              text = text.replace(marker, command + marker, 1)
+              marker = "    if (flow.type === 'send-message') {"
+              flow = r'''    if (flow.type === 'send-media') {
+              if (flow.step === 'target') {
+                try {
+                  data.target = await this.resolveTarget(session, data.targetQuery || value);
+                  flow.step = 'choose-file'; this.save(session);
+                  await this.promptSavedMediaPicker(id, session);
+                } catch (error) { await this.reply(id, error.message + '\nاكتب اسم مستلم محفوظ أو «إلغاء».'); }
+                return true;
+              }
+              if (flow.step === 'choose-file') {
+                const files = typeof this.delivery?.files === 'function' ? this.delivery.files(id) : [];
+                const wanted = normalize(value), number = /^\d{1,5}$/u.test(value) ? Number(value) : 0;
+                const file = number >= 1 && number <= files.length ? files[number - 1] : files.find(item => normalize(item.filename) === wanted || normalize(item.id) === wanted);
+                if (!file) { await this.reply(id, 'لم أتعرف على الاختيار. اكتب رقمًا من 1 إلى ' + files.length + ' أو اسم الملف كاملًا، أو «إلغاء».'); return true; }
+                data.file = { id: file.id, filename: file.filename, ext: file.ext, size: file.size, isImage: file.isImage, isVideo: file.isVideo, isAudio: file.isAudio };
+                data.asSticker = data.asSticker || /^sticker_/i.test(file.filename);
+                flow.step = 'confirm'; this.save(session);
+                await this.reply(id, 'مراجعة الملف قبل الإرسال:\nإلى: ' + data.target.label + '\nالملف: ' + file.filename + ' (' + Math.ceil(Number(file.size || 0) / 1024) + ' KB)\nاكتب «تأكيد الإرسال» أو «هو ده» للتنفيذ، أو «إلغاء».');
+                return true;
+              }
+              if (flow.step === 'confirm') {
+                if (!/^(?:تاكيد الارسال|هو ده|ده هو|تمام|نعم|موافق|confirm|ok)$/u.test(p)) {
+                  await this.reply(id, 'لم أرسل الملف بعد. اكتب «تأكيد الإرسال» أو «هو ده»، أو «إلغاء».'); return true;
+                }
+                try {
+                  const fresh = this.session(id), files = typeof this.delivery?.files === 'function' ? this.delivery.files(id) : [];
+                  const file = files.find(item => item.id === data.file?.id && item.filename === data.file?.filename);
+                  if (!file) throw new Error('الملف لم يعد موجودًا في المكتبة؛ أعد الاختيار.');
+                  const target = await this.resolveTarget(fresh, String(data.target?.label || ''));
+                  const fullPath = safePath(this.store.getPaths(id).images, file.filename);
+                  if (!fs.existsSync(fullPath) || !fs.statSync(fullPath).isFile()) throw new Error('الملف غير موجود محليًا، ولم يتم الإرسال.');
+                  const asSticker = Boolean(data.asSticker && /\.webp$/i.test(file.filename));
+                  const asDocument = !asSticker && !file.isImage && !file.isVideo && !file.isAudio;
+                  const result = await this.whatsapp.sendMedia(id, target.chatId, fullPath, { asDocument, asSticker });
+                  const latest = this.session(id);
+                  latest.ownerAssistant.flow = null;
+                  latest.ownerAssistant.recent.push({ at: new Date().toISOString(), type: 'send-saved-media', target: target.label, filename: file.filename, asSticker });
+                  this.save(latest);
+                  await this.reply(id, 'تم تمرير «' + file.filename + '» إلى WhatsApp لإرساله إلى «' + target.label + '». الحالة: ' + (result?.__chatBotAck?.status || 'قبول الإرسال') + '.');
+                } catch (error) {
+                  const latest = this.session(id); latest.ownerAssistant.flow = null; this.save(latest);
+                  await this.reply(id, 'تعذر إرسال الملف: ' + String(error?.message || error).slice(0, 500) + '\nلم تتم إعادة المحاولة تلقائيًا لتجنب التكرار.');
+                }
+                return true;
+              }
+            }
+            '''
+              if marker not in text: raise SystemExit("Missing send-message flow marker")
+              return text.replace(marker, flow + marker, 1)
+          edit("src/owner-assistant.js", patch_owner)
+
+          def patch_whatsapp_media(text):
+              old = "async sendMedia(id, chatId, file, { timeoutMs = 30000, asDocument = false, caption = '' } = {}) {"
+              new = "async sendMedia(id, chatId, file, { timeoutMs = 30000, asDocument = false, asSticker = false, caption = '' } = {}) {"
+              if old not in text: raise SystemExit("Missing sendMedia signature")
+              text = text.replace(old, new, 1)
+              old = "    const mediaOptions = { sendMediaAsDocument: Boolean(asDocument) };"
+              new = "    if (asSticker && path.extname(file).toLowerCase() !== '.webp') throw new Error('إرسال الملصق يتطلب ملف WebP.');\n    const mediaOptions = { sendMediaAsDocument: Boolean(asDocument), ...(asSticker ? { sendMediaAsSticker: true } : {}) };"
+              if old not in text: raise SystemExit("Missing media options block")
+              return text.replace(old, new, 1)
+          edit("src/whatsapp.js", patch_whatsapp_media)
+
+          if "test/recipient-paused.js" not in members:
+              members["test/recipient-paused.js"] = r'''const assert = require('node:assert/strict');
+            const { recipientIsPaused } = require('../src/recipient-replies');
+            const session = {
+              recipients: [
+                { id: 'x', name: 'Disabled by phone', e164: '+96890001111', enabled: false },
+                { id: 'y', name: 'Paused LID', digits: '96890002222', jid: '96890002222@c.us', enabled: true, paused: true },
+                { id: 'z', name: 'Running', digits: '96890003333', enabled: true }
+              ],
+              groups: [{ id: 'g1', name: 'Muted group', gid: '120363000000001@g.us', enabled: false }]
+            };
+            assert.equal(recipientIsPaused(session, '96890001111@c.us'), true);
+            assert.equal(recipientIsPaused(session, '96890002222@lid'), true);
+            assert.equal(recipientIsPaused(session, '120363000000001@g.us'), true);
+            assert.equal(recipientIsPaused(session, '96890003333@c.us'), false);
+            assert.equal(recipientIsPaused(session, '96890004444@c.us'), false);
+            console.log('recipient-paused: ok');
+            '''
           with tempfile.NamedTemporaryFile(prefix="repaired-", suffix=".zip", dir=".", delete=False) as handle:
               output_path = Path(handle.name)
           try:
