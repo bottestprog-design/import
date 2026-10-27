@@ -237,7 +237,8 @@ jobs:
             }
           '''
               if marker not in text: raise SystemExit("Missing saved-media method marker")
-              text = text.replace(marker, methods + marker, 1)
+              if "async rememberIncomingMedia(id, msg)" not in text:
+                  text = text.replace(marker, methods + marker, 1)
               marker = "    if (/(?:ارسل|ابعث|ابعت|ارسال|ابعاث).*(?:رساله|رسالة)|^(?:ارسل رسالة|ابعت رسالة|ارسال رساله)$/u.test(p)) {"
               command = r'''    const mediaRequest = p.match(/^(?:ارسل|ابعث|ابعت|ابعثلي|ابعتلي)\s+(?:من\s+)?(?:الملفات المحفوظه|الملفات المحفوظة|الوسائط|الملفات|الملف|ملف|الصوره|صوره|الصورة|صورة|ستيكر|ملصق)(?:\s+(.+))?$/u);
               if (mediaRequest) {
@@ -263,7 +264,8 @@ jobs:
               }
               '''
               if marker not in text: raise SystemExit("Missing send command marker")
-              text = text.replace(marker, command + marker, 1)
+              if "const mediaRequest = p.match(" not in text:
+                  text = text.replace(marker, command + marker, 1)
               marker = "    if (flow.type === 'send-message') {"
               flow = r'''    if (flow.type === 'send-media') {
               const data = flow.data || {};
@@ -314,17 +316,23 @@ jobs:
             }
             '''
               if marker not in text: raise SystemExit("Missing send-message flow marker")
-              return text.replace(marker, flow + marker, 1)
+              if "if (flow.type === 'send-media')" not in text:
+                  text = text.replace(marker, flow + marker, 1)
+              return text
           edit("src/owner-assistant.js", patch_owner)
 
           def patch_whatsapp_media(text):
               old = "async sendMedia(id, chatId, file, { timeoutMs = 30000, asDocument = false, caption = '' } = {}) {"
               new = "async sendMedia(id, chatId, file, { timeoutMs = 30000, asDocument = false, asSticker = false, caption = '' } = {}) {"
-              if old not in text: raise SystemExit("Missing sendMedia signature")
-              text = text.replace(old, new, 1)
+              if old not in text:
+                  if new not in text: raise SystemExit("Missing sendMedia signature")
+              else:
+                  text = text.replace(old, new, 1)
               old = "    const mediaOptions = { sendMediaAsDocument: Boolean(asDocument) };"
               new = "    if (asSticker && path.extname(file).toLowerCase() !== '.webp') throw new Error('إرسال الملصق يتطلب ملف WebP.');\n    const mediaOptions = { sendMediaAsDocument: Boolean(asDocument), ...(asSticker ? { sendMediaAsSticker: true } : {}) };"
-              if old not in text: raise SystemExit("Missing media options block")
+              if old not in text:
+                  if "sendMediaAsSticker: true" not in text: raise SystemExit("Missing media options block")
+                  return text
               return text.replace(old, new, 1)
           edit("src/whatsapp.js", patch_whatsapp_media)
 
