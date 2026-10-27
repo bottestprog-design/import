@@ -343,6 +343,70 @@ jobs:
             assert.equal(recipientIsPaused(session, '96890004444@c.us'), false);
             console.log('recipient-paused: ok');
             '''
+          # Exercise the owner saved-media flow using a temporary local media library.
+          members["test/owner-media-send.js"] = r'''const assert = require('node:assert/strict');
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const os = require('node:os');
+          const { OwnerAssistant } = require('../src/owner-assistant');
+          const { scanImages } = require('../src/media');
+
+          const root = fs.mkdtempSync(path.join(os.tmpdir(), 'owner-media-send-'));
+          const images = path.join(root, 'images');
+          fs.mkdirSync(images, { recursive: true });
+          let session = {
+            id: 'main', name: 'test',
+            recipients: [{ id: 'ahmed', name: 'أحمد', digits: '96891111111', e164: '+96891111111', enabled: true }],
+            groups: [], settings: { maxImageSizeMB: 20 }, interaction: { rules: [] },
+            automation: { tasks: [], rules: [] }, stats: {}, cycle: {},
+            ownerAssistant: { flow: null, recent: [] }
+          };
+          const clone = value => JSON.parse(JSON.stringify(value));
+          const store = {
+            safeSessionId: value => String(value || 'main'),
+            loadSession: () => clone(session),
+            saveSession: value => { session = clone(value); return clone(session); },
+            getPaths: () => ({ dir: root, images })
+          };
+          const replies = [], sends = [];
+          const whatsapp = {
+            selfChatId: () => '96890000000@c.us',
+            sendText: async (_id, _chat, body) => { replies.push(String(body)); return { __chatBotAck: { status: 'confirmed' } }; },
+            sendMedia: async (_id, chatId, file, options) => { sends.push({ chatId, file, options }); return { __chatBotAck: { status: 'confirmed' } }; }
+          };
+          const delivery = { files: () => scanImages(images, 20).files };
+          (async () => {
+            const owner = new OwnerAssistant({ store, whatsapp, phones: { parse: () => ({}) }, log: () => {}, delivery });
+            owner.resolveTarget = async (_session, value) => {
+              assert.ok(/احمد/i.test(String(value)), 'recipient name should be resolved from the owner selection');
+              return { label: 'أحمد', chatId: '96891111111@c.us', key: 'r:ahmed' };
+            };
+            const encoded = Buffer.from('fake-webp-sticker-bytes').toString('base64');
+            const saved = await owner.rememberIncomingMedia('main', {
+              hasMedia: true, type: 'sticker',
+              _data: { mimetype: 'image/webp', filename: 'sticker.webp' },
+              downloadMedia: async () => ({ data: encoded, mimetype: 'image/webp', filename: 'sticker.webp' })
+            });
+            assert.ok(saved.filename.endsWith('.webp'));
+            assert.ok(fs.existsSync(path.join(images, saved.filename)));
+
+            await owner.handleSelfChatMessage('main', { body: 'ارسل من الملفات المحفوظة إلى أحمد' });
+            assert.equal(session.ownerAssistant.flow.type, 'send-media');
+            assert.equal(session.ownerAssistant.flow.step, 'choose-file');
+            assert.equal(sends.length, 0, 'media must not be sent before a file is chosen and confirmed');
+            await owner.handleSelfChatMessage('main', { body: '1' });
+            assert.equal(session.ownerAssistant.flow.step, 'confirm');
+            assert.equal(sends.length, 0, 'selecting the file alone must not send it');
+            await owner.handleSelfChatMessage('main', { body: 'هو ده' });
+            assert.equal(sends.length, 1, 'the explicit owner confirmation should send the chosen item once');
+            assert.equal(sends[0].chatId, '96891111111@c.us');
+            assert.equal(sends[0].options.asSticker, true);
+            assert.equal(sends[0].options.asDocument, false);
+            assert.equal(session.ownerAssistant.flow, null);
+            console.log('owner-media-send: ok (save owner sticker locally, choose saved file, require explicit send confirmation)');
+          })().catch(error => { console.error(error); process.exitCode = 1; })
+            .finally(() => fs.rmSync(root, { recursive: true, force: true }));
+          '''
           with tempfile.NamedTemporaryFile(prefix="repaired-", suffix=".zip", dir=".", delete=False) as handle:
               output_path = Path(handle.name)
           try:
@@ -363,6 +427,11 @@ jobs:
       - name: Print targeted code paths for repair
         run: |
           cd project
+          echo "=== WEBSITE INTEGRATION UI AND STARTUP SCRIPTS ==="
+          sed -n '700,770p' public/app.js
+          sed -n '2000,2145p' public/app.js
+          sed -n '360,465p' src/integration-hub.js
+          find . -maxdepth 2 -type f \( -iname '*.bat' -o -iname '*.cmd' -o -iname '*.ps1' -o -iname '*.sh' \) -print
           echo "=== SERVER VOICE AND SELF CHAT ==="
           sed -n '1295,1428p' server.js
           echo "=== OWNER ASSISTANT COMMANDS ==="
