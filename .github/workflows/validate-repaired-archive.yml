@@ -89,39 +89,43 @@ jobs:
 
           # Focused runtime fixes shipped inside the release archive.
           def patch_server(text):
-              old = """    if (audioType) {
-                  assistantMessage = await withVoiceTranscript(id, msg, { selfChat: true });"""
-              new = """    if (audioType && voiceBootstrapTask) {
-                  try {
-                    const voiceStatus = await audioTranscriber.status();
-                    if (!voiceStatus.ready) {
-                      try { audioTranscriber.rememberIncoming(id, msg); } catch {}
-                      await withTimeoutPromise(voiceBootstrapTask, 50 * 60 * 1000, 'إعداد محركات الصوت المحلية');
-                    }
-                  } catch (error) { log(id, 'WARN', 'تعذر انتظار إعداد الصوت في محادثة النفس: ' + safeError(error)); }
-                }
-                if (audioType) {
-                  assistantMessage = await withVoiceTranscript(id, msg, { selfChat: true });"""
-              if old not in text: raise SystemExit("Missing owner voice path")
-              text = text.replace(old, new, 1)
-              old = """    let assistantMessage = msg;
-                const audioType = ['audio','ptt','voice'].includes(String(msg?.type || '').toLowerCase())"""
-              new = """    if (msg?.hasMedia === true && typeof msg.downloadMedia === 'function') {
-                try {
-                  const stored = await ownerAssistant.rememberIncomingMedia(id, msg);
-                  if (stored) log(id, 'INFO', 'تم حفظ مرفق المالك محليًا: ' + stored.filename);
-                } catch (error) { log(id, 'WARN', 'تعذر حفظ مرفق محادثة النفس: ' + safeError(error)); }
-              }
-              let assistantMessage = msg;
-              const audioType = ['audio','ptt','voice'].includes(String(msg?.type || '').toLowerCase())"""
-              if old not in text: raise SystemExit("Missing owner media capture path")
-              # insert into the self-chat listener, not another occurrence
-              index = text.index("whatsapp.on('message_create'")
-              pos = text.find(old, index)
-              if pos < 0: raise SystemExit("Could not locate self-chat media capture")
-              return text[:pos] + text[pos:].replace(old, new, 1)
-          edit("server.js", patch_server)
-
+              marker = "whatsapp.on('message_create'"
+              start = text.index(marker)
+              pattern = re.compile(r"(?m)^([ \t]*)if \(audioType\) \{\s*assistantMessage = await withVoiceTranscript\(id, msg, \{ selfChat: true \}\);")
+              match = pattern.search(text, start)
+              if not match:
+                  raise SystemExit("Missing owner voice path after self-chat listener")
+              indent = match.group(1)
+              new = (
+                  indent + "if (audioType && voiceBootstrapTask) {\n"
+                  + indent + "  try {\n"
+                  + indent + "    const voiceStatus = await audioTranscriber.status();\n"
+                  + indent + "    if (!voiceStatus.ready) {\n"
+                  + indent + "      try { audioTranscriber.rememberIncoming(id, msg); } catch {}\n"
+                  + indent + "      await withTimeoutPromise(voiceBootstrapTask, 50 * 60 * 1000, 'إعداد محركات الصوت المحلية');\n"
+                  + indent + "    }\n"
+                  + indent + "  } catch (error) { log(id, 'WARN', 'تعذر انتظار إعداد الصوت في محادثة النفس: ' + safeError(error)); }\n"
+                  + indent + "}\n"
+                  + indent + "if (audioType) {\n"
+                  + indent + "  assistantMessage = await withVoiceTranscript(id, msg, { selfChat: true });"
+              )
+              text = text[:match.start()] + new + text[match.end():]
+              # Save every media item intentionally sent to the validated owner self-chat into the local library.
+              media_pattern = re.compile(r"(?m)^([ \t]*)let assistantMessage = msg;")
+              media_match = media_pattern.search(text, start)
+              if not media_match:
+                  raise SystemExit("Missing owner media capture path")
+              indent = media_match.group(1)
+              capture = (
+                  indent + "if (msg?.hasMedia === true && typeof msg.downloadMedia === 'function') {\n"
+                  + indent + "  try {\n"
+                  + indent + "    const stored = await ownerAssistant.rememberIncomingMedia(id, msg);\n"
+                  + indent + "    if (stored) log(id, 'INFO', 'تم حفظ مرفق المالك محليًا: ' + stored.filename);\n"
+                  + indent + "  } catch (error) { log(id, 'WARN', 'تعذر حفظ مرفق محادثة النفس: ' + safeError(error)); }\n"
+                  + indent + "}\n"
+                  + indent + "let assistantMessage = msg;"
+              )
+              return text[:media_match.start()] + capture + text[media_match.end():]
           def patch_restore(text):
               old = """    const restoreRestartIds = restoredIds.filter(sessionId => {
                 try { return priorActiveSessionIds.includes(sessionId) || Boolean(store.loadSession(sessionId).settings.autoStartSession) || whatsapp.hasSavedAuth(sessionId); }
@@ -255,6 +259,7 @@ jobs:
               text = text.replace(marker, command + marker, 1)
               marker = "    if (flow.type === 'send-message') {"
               flow = r'''    if (flow.type === 'send-media') {
+              const data = flow.data || {};
               if (flow.step === 'target') {
                 try {
                   data.target = await this.resolveTarget(session, data.targetQuery || value);
