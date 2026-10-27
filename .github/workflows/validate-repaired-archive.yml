@@ -459,7 +459,7 @@ jobs:
           assert.match(server, /const shouldStart = explicit \? explicit\.has\(id\)/, 'explicit restored sessions must start even without a previously saved auth state, so QR pairing can appear');
           console.log('owner-scope-and-restore: ok (owner-only self-chat command route and restored-session restart)');
           '''
-                    if "test/recipient-paused.js" not in members:
+          if "test/recipient-paused.js" not in members:
               members["test/recipient-paused.js"] = r'''const assert = require('node:assert/strict');
             const { recipientIsPaused } = require('../src/recipient-replies');
             const session = {
