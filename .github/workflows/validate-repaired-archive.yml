@@ -123,6 +123,13 @@ jobs:
           sed -n '1,130p' test/owner-assistant.js
           sed -n '1,140p' test/self-chat-routing.js
           sed -n '1,130p' test/whatsapp-chat-tools.js
+          echo "=== DELIVERY SERVICE ==="
+          cat src/delivery.js
+          echo "=== LOCAL BACKUP ==="
+          cat src/local-backup.js
+          echo "=== BACKUP TESTS ==="
+          ls test/*backup* test/*restore* 2>/dev/null || true
+          grep -R -n -E "conversations.jsonl|restoreValidatedBackup|createEncryptedBackup|ownerAssistant.flow|voiceBootstrapTask" test src/local-backup.js
       - name: Inspect key runtime paths
         run: |
           python - <<'PY'
