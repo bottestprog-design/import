@@ -123,6 +123,16 @@ jobs:
           sed -n '1,130p' test/owner-assistant.js
           sed -n '1,140p' test/self-chat-routing.js
           sed -n '1,130p' test/whatsapp-chat-tools.js
+          echo "=== OWNER SOURCE HEAD AND VOICE METHODS ==="
+          sed -n '1,230p' src/owner-assistant.js
+          echo "=== MEDIA MODULE ==="
+          cat src/media.js
+          echo "=== SERVER RESTORE AND INTEGRATION ROUTES ==="
+          sed -n '337,455p' server.js
+          echo "=== INTEGRATION HUB FRONTEND REFERENCES ==="
+          grep -n -E "integrationHub|integrations|api/integration|integration-" public/app.js | head -100
+          echo "=== INTEGRATION MODULE METHODS ==="
+          grep -n -E "class |async |^[[:space:]]+[A-Za-z0-9_]+\(" src/integration-hub.js | head -180
           echo "=== DELIVERY SERVICE ==="
           cat src/delivery.js
           echo "=== LOCAL BACKUP ==="
