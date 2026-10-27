@@ -104,6 +104,36 @@ jobs:
         run: unzip -t chat-BOT-v9.16.5-repaired.zip
       - name: Unpack project
         run: mkdir project && unzip -q chat-BOT-v9.16.5-repaired.zip -d project
+      - name: Inspect key runtime paths
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          files = {
+            "project/server.js": ["async function withVoiceTranscript", "withVoiceTranscript =", "ownerAssistant.handleSelfChatMessage", "whatsapp.on('message'", "restoreValidatedBackup", "scheduleSavedSessionRestart", "transcription/transcribe-latest"],
+            "project/src/owner-assistant.js": ["handleSelfChatMessage", "send", "voice", "media", "pending", "confirm", "audioTranscriber", "conversationArchive"],
+            "project/src/audio-transcriber.js": ["async status", "async transcribe", "rememberIncoming", "latestBySession", "WHISPER_MODEL_PATH"],
+            "project/src/text-to-speech.js": ["async generate", "toWhatsAppVoice", "async status", "proofread", "binary"],
+            "project/src/conversation-archive.js": ["restore", "sessions", "messages", "load"],
+            "project/src/conversation-recall.js": ["restore", "search", "messages", "target"],
+            "project/src/recipient-replies.js": ["recipientForChat", "recipientIsPaused", "enabled", "module.exports"],
+            "project/src/whatsapp.js": ["sendMessage", "sendVoice", "sendMedia", "MessageMedia", "getChatById", "restore"]
+          }
+          for filename, terms in files.items():
+            p=Path(filename)
+            if not p.exists():
+              print("\n### MISSING",filename); continue
+            lines=p.read_text(encoding="utf-8-sig").splitlines()
+            selected=set()
+            for i,line in enumerate(lines):
+              if any(t.lower() in line.lower() for t in terms):
+                selected.update(range(max(0,i-4), min(len(lines),i+11)))
+            print("\n###",filename,"lines",len(lines))
+            previous=-2
+            for i in sorted(selected):
+              if i>previous+1: print("...")
+              print(f"{i+1}: {lines[i]}")
+              previous=i
+          PY
       - name: Check JavaScript syntax
         run: find project -type f -name '*.js' -print0 | xargs -0 -n1 node --check
       - name: Validate JSON files
