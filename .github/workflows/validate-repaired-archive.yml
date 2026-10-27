@@ -104,6 +104,25 @@ jobs:
         run: unzip -t chat-BOT-v9.16.5-repaired.zip
       - name: Unpack project
         run: mkdir project && unzip -q chat-BOT-v9.16.5-repaired.zip -d project
+      - name: Print targeted code paths for repair
+        run: |
+          cd project
+          echo "=== SERVER VOICE AND SELF CHAT ==="
+          sed -n '1295,1428p' server.js
+          echo "=== OWNER ASSISTANT COMMANDS ==="
+          sed -n '200,365p' src/owner-assistant.js
+          echo "=== OWNER ASSISTANT FLOW HANDLER ==="
+          sed -n '630,830p' src/owner-assistant.js
+          echo "=== OWNER ASSISTANT SEND MEDIA ==="
+          grep -n -E "sendMedia|forwardMedia|pending.*media|media.*flow|delivery\.files|downloadMedia|lastReplies|handleSelfChatMessage" src/owner-assistant.js src/delivery.js
+          echo "=== STORE VOICE DEFAULTS ==="
+          grep -n -E "voiceAutoTranscribe|ttsRequireProofread|ttsProofread|APP_VERSION" src/store.js
+          echo "=== TTS FILE ==="
+          cat src/text-to-speech.js
+          echo "=== TEST SETUP ==="
+          sed -n '1,130p' test/owner-assistant.js
+          sed -n '1,140p' test/self-chat-routing.js
+          sed -n '1,130p' test/whatsapp-chat-tools.js
       - name: Inspect key runtime paths
         run: |
           python - <<'PY'
