@@ -135,7 +135,10 @@ jobs:
               new = """    // Start every restored session so missing WhatsApp authentication triggers the QR/pairing flow.
               const restoreRestartIds = [...restoredIds];
               scheduleSavedSessionRestart(700, 'الاستعادة', restoreRestartIds);"""
-              if old not in text: raise SystemExit("Missing restore restart selection")
+              if old not in text:
+                  if new in text:
+                      return text
+                  raise SystemExit("Missing restore restart selection")
               return text.replace(old, new, 1)
           edit("server.js", patch_restore)
 
