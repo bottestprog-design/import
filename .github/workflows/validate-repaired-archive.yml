@@ -167,6 +167,13 @@ jobs:
               return text[:start] + newer + text[end:]
           edit("src/recipient-replies.js", patch_recipient_pause)
 
+          def patch_store_tts(text):
+              needle = "s.settings.voiceAutoTranscribeEnabled = s.settings.voiceAutoTranscribeEnabled !== false; s.settings.voiceAutoTranscribeSelfChat = s.settings.voiceAutoTranscribeSelfChat !== false; s.settings.voiceTranscribeLanguage = ['ar','en','fr','de','es','ur','hi','tr'].includes(String(s.settings.voiceTranscribeLanguage || 'ar')) ? String(s.settings.voiceTranscribeLanguage || 'ar') : 'ar';"
+              replacement = needle + " s.settings.ttsProofreadEnabled = s.settings.ttsProofreadEnabled !== false; s.settings.ttsRequireProofread = s.settings.ttsRequireProofread === undefined ? !/^(?:0|false|no|off)$/i.test(String(process.env.TTS_REQUIRE_PROOFREAD || 'false')) : s.settings.ttsRequireProofread === true;"
+              if needle not in text: raise SystemExit("Missing store settings normalization for voice")
+              return text.replace(needle, replacement, 1)
+          edit("src/store.js", patch_store_tts)
+
           def patch_owner(text):
               for line in [
                   "const fs = require('node:fs');",
@@ -174,9 +181,6 @@ jobs:
                   "const { MEDIA_EXT, MIME, safePath, uniqueFileName } = require('./media');"
               ]:
                   if line not in text: text = text.replace("'use strict';", "'use strict';\n" + line, 1)
-              text = text.replace("String(process.env.TTS_REQUIRE_PROOFREAD || 'true')", "String(process.env.TTS_REQUIRE_PROOFREAD || 'false')")
-              text = text.replace("const proofreadRequired = s.settings?.ttsRequireProofread !== false;",
-                  "const proofreadRequired = s.settings?.ttsRequireProofread === undefined ? !/^(?:0|false|no|off)$/i.test(String(process.env.TTS_REQUIRE_PROOFREAD || 'false')) : s.settings.ttsRequireProofread !== false;")
               marker = "  registeredChatTargets(session, selfChatId = '') {"
               methods = r'''  async rememberIncomingMedia(id, msg) {
               if (!msg || msg.hasMedia !== true || typeof msg.downloadMedia !== 'function') return null;
