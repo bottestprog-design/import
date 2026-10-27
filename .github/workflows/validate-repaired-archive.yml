@@ -325,7 +325,141 @@ jobs:
               return text.replace(old, new, 1)
           edit("src/whatsapp.js", patch_whatsapp_media)
 
-          if "test/recipient-paused.js" not in members:
+          # Phase 1 safety: re-check a recipient at every outbound stage and retry.
+          def patch_delivery_guard(text):
+              marker = "  async sequence(id, target, image,"
+              if marker not in text:
+                  raise SystemExit("Missing DeliveryService.sequence()")
+              if "  assertTargetEnabled(id, target) {" not in text:
+                  methods = r'''  assertTargetEnabled(id, target) {
+              const current = this.session(id);
+              const groupTarget = String(target?.kind || (target?.gid ? 'group' : 'recipient')).toLowerCase() === 'group';
+              const collection = groupTarget ? current.groups : current.recipients;
+              const targetId = String(target?.targetId || target?.id || '').replace(/^[rg]:/, '');
+              const currentTarget = (Array.isArray(collection) ? collection : []).find(item => String(item?.id || '') === targetId);
+              if (!currentTarget || currentTarget.enabled === false || currentTarget.paused === true || currentTarget.stopped === true) {
+                throw Object.assign(new Error('تم إيقاف هذا المستلم أثناء الإرسال؛ أُوقفت بقية الرسائل ولم تتم إعادة المحاولة.'), {
+                  code: 'RECIPIENT_DISABLED', retryable: false
+                });
+              }
+              return currentTarget;
+            }
+            saveSequenceState(id, session) {
+              // Preserve live recipient/group enable flags when persisting progress after an awaited send.
+              const latest = this.session(id);
+              session.recipients = latest.recipients;
+              session.groups = latest.groups;
+              this.store.saveSession(session);
+            }
+            '''
+                  text = text.replace(marker, methods + marker, 1)
+              old = "    const s = this.session(id), vars = nowVars(target, image, s.settings.timezone), pre = renderTemplate(preText ?? s.settings.preText, vars), post = renderTemplate(postText ?? s.settings.postText, vars), p = this.store.getPaths(id), chatId = await this.whatsapp.resolveChatId(id, target), file = image ? safePath(p.images, image.filename) : null, st = countTowardCycle && image ? this.state(s, image, target) : { pre: false, image: false, post: false };"
+              new = "    this.assertTargetEnabled(id, target);\n" + old
+              if old not in text: raise SystemExit("Missing sequence initialization")
+              text = text.replace(old, new, 1)
+              # Each retry must re-check the current state, not the queued target snapshot.
+              replacements = [
+                ("() => this.whatsapp.sendText(id, chatId, pre, { timeoutMs: s.settings.sendTimeoutMs })",
+                 "() => { this.assertTargetEnabled(id, target); return this.whatsapp.sendText(id, chatId, pre, { timeoutMs: s.settings.sendTimeoutMs }); }"),
+                ("() => this.whatsapp.sendMedia(id, chatId, file, { timeoutMs: s.settings.sendTimeoutMs, asDocument, caption })",
+                 "() => { this.assertTargetEnabled(id, target); return this.whatsapp.sendMedia(id, chatId, file, { timeoutMs: s.settings.sendTimeoutMs, asDocument, caption }); }"),
+                ("() => this.whatsapp.sendText(id, chatId, post, { timeoutMs: s.settings.sendTimeoutMs })",
+                 "() => { this.assertTargetEnabled(id, target); return this.whatsapp.sendText(id, chatId, post, { timeoutMs: s.settings.sendTimeoutMs }); }"),
+              ]
+              for old_call, new_call in replacements:
+                  if old_call not in text: raise SystemExit("Missing outbound call for recipient guard: " + old_call[:55])
+                  text = text.replace(old_call, new_call, 1)
+              # Persist only this sequence's progress while retaining current recipient/group flags.
+              start = text.index(marker)
+              end = text.index("\n  allComplete(", start)
+              block = text[start:end]
+              block = block.replace("this.store.saveSession(s);", "this.saveSequenceState(id, s);")
+              block = block.replace(
+                  "} catch (e) { if (e.code === 'SEND_UNCERTAIN') s.stats.uncertainSends++; st.lastError = safeError(e); this.saveSequenceState(id, s); throw e; }",
+                  "} catch (e) { if (e.code === 'RECIPIENT_DISABLED') throw e; if (e.code === 'SEND_UNCERTAIN') s.stats.uncertainSends++; st.lastError = safeError(e); this.saveSequenceState(id, s); throw e; }"
+              )
+              return text[:start] + block + text[end:]
+          edit("src/delivery.js", patch_delivery_guard)
+
+          # A regression test simulates the recipient being disabled while the first send is awaiting confirmation.
+          members["test/delivery-recipient-pause.js"] = r'''const assert = require('node:assert/strict');
+          const os = require('node:os');
+          const path = require('node:path');
+          const fs = require('node:fs');
+          const { DeliveryService } = require('../src/delivery');
+
+          let persisted = {
+            id: 'main',
+            recipients: [{ id: 'alice', name: 'Alice', enabled: true, digits: '96890001111' }],
+            groups: [],
+            settings: { timezone: 'UTC', preText: '', postText: '', sendDelayMs: 0, sendTimeoutMs: 1000, retryAttempts: 3, retryDelayMs: 0 },
+            stats: { sentMessages: 0, sentImages: 0, sentFiles: 0, confirmedAcks: 0, createdSends: 0, failedSends: 0, uncertainSends: 0 },
+            cycle: { delivery: {}, manualGuard: {} }
+          };
+          const clone = value => JSON.parse(JSON.stringify(value));
+          const store = {
+            safeSessionId: value => String(value || 'main'),
+            loadSession: () => clone(persisted),
+            saveSession: value => { persisted = clone(value); return clone(persisted); },
+            getPaths: () => ({ images: os.tmpdir() })
+          };
+          const sent = [];
+          const whatsapp = {
+            resolveChatId: async () => '96890001111@c.us',
+            sendText: async (_id, _chatId, body) => {
+              sent.push(body);
+              if (sent.length === 1) persisted.recipients[0].enabled = false;
+              return { __chatBotAck: { status: 'confirmed' } };
+            },
+            sendMedia: async () => { throw new Error('unexpected media send'); }
+          };
+          (async () => {
+            const delivery = new DeliveryService({ store, whatsapp, log: () => {} });
+            await assert.rejects(
+              () => delivery.sequence('main', { id: 'alice', targetId: 'alice', kind: 'recipient', name: 'Alice', enabled: true }, null,
+                { scheduled: false, preText: 'first message', postText: 'must not be sent', countTowardCycle: false }),
+              error => error?.code === 'RECIPIENT_DISABLED'
+            );
+            assert.deepEqual(sent, ['first message'], 'no later stage may send after the recipient is disabled');
+            assert.equal(persisted.recipients[0].enabled, false, 'saving send progress must not undo the stop action');
+            console.log('delivery-recipient-pause: ok (stop takes effect between send stages and survives progress persistence)');
+          })().catch(error => { console.error(error); process.exitCode = 1; });
+          '''
+
+          # Guard the owner command route and backup restore restart policy against accidental regressions.
+          members["test/owner-scope-and-restore.js"] = r'''const assert = require('node:assert/strict');
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const server = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
+
+          const createStart = server.indexOf("whatsapp.on('message_create'");
+          const createEnd = server.indexOf("whatsapp.on('reaction'", createStart);
+          assert.ok(createStart >= 0 && createEnd > createStart, 'self-chat message_create route must exist');
+          const outboundRoute = server.slice(createStart, createEnd);
+          const fromMeGate = outboundRoute.indexOf('if (!fromMe || msg.__chatBotProgrammatic || msg._chatBotProgrammatic) return;');
+          const selfChatGate = outboundRoute.indexOf('if (!await whatsapp.isSelfChatMessage(id, msg))');
+          const ownerCommand = outboundRoute.indexOf('localCommandBridge.handle(id');
+          const ownerAssistant = outboundRoute.indexOf('ownerAssistant.handleSelfChatMessage(id, assistantMessage)');
+          assert.ok(fromMeGate >= 0 && selfChatGate > fromMeGate, 'owner commands must require an owner-originated, validated self-chat event');
+          assert.ok(ownerCommand > selfChatGate && ownerAssistant > selfChatGate, 'owner command bridge and assistant must be called only after the self-chat gate');
+
+          const inboundStart = server.indexOf("whatsapp.on('message', async (id, msg) =>");
+          const inboundEnd = server.indexOf("whatsapp.on('message_create'", inboundStart);
+          assert.ok(inboundStart >= 0 && inboundEnd > inboundStart, 'ordinary inbound-message route must exist');
+          const inboundRoute = server.slice(inboundStart, inboundEnd);
+          assert.equal(inboundRoute.includes('ownerAssistant.handleSelfChatMessage'), false, 'third-party inbound messages must not enter the owner assistant');
+          assert.equal(inboundRoute.includes('localCommandBridge.handle'), false, 'third-party inbound messages must not execute owner commands');
+
+          const restoreStart = server.indexOf("app.post('/api/backup/restore'");
+          const restoreEnd = server.indexOf("});", restoreStart);
+          assert.ok(restoreStart >= 0 && restoreEnd > restoreStart, 'restore route must exist');
+          const restoreRoute = server.slice(restoreStart, server.indexOf('// Integration Hub:', restoreStart));
+          assert.match(restoreRoute, /const restoreRestartIds = \[\.\.\.restoredIds\]/, 'every restored session must be selected for restart');
+          assert.match(restoreRoute, /scheduleSavedSessionRestart\(700, 'الاستعادة', restoreRestartIds\)/, 'restoration must schedule the restored sessions to reconnect');
+          assert.match(server, /const shouldStart = explicit \? explicit\.has\(id\)/, 'explicit restored sessions must start even without a previously saved auth state, so QR pairing can appear');
+          console.log('owner-scope-and-restore: ok (owner-only self-chat command route and restored-session restart)');
+          '''
+                    if "test/recipient-paused.js" not in members:
               members["test/recipient-paused.js"] = r'''const assert = require('node:assert/strict');
             const { recipientIsPaused } = require('../src/recipient-replies');
             const session = {
@@ -507,6 +641,14 @@ jobs:
       - name: Run strict verification suite
         working-directory: project
         run: npm run test:strict
+      - name: Upload phase 1 ZIP artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: chat-BOT-v9.16.5-phase1
+          path: chat-BOT-v9.16.5-repaired.zip
+          if-no-files-found: error
+          retention-days: 7
       - name: Commit validated release archive
         if: success()
         run: |
