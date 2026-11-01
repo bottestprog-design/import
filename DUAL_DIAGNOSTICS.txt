@@ -1,0 +1,25 @@
+﻿=== DEVICE INFORMATION ===
+Windows: Microsoft Windows 10 Pro
+Version: 10.0.19045 | Build: 19045
+Architecture: 64-bit
+CPU: Intel(R) Core(TM) i5-2450M CPU @ 2.50GHz
+RAM: 7.8 GB
+
+=== GRAPHICS ===
+GPU: Intel(R) HD Graphics 3000 | Driver: 9.17.10.4459
+
+=== STORAGE ===
+C: Free: 53.8 GB / Total: 223.0 GB
+
+=== PYTHON ===
+Python 3.14.6
+
+
+=== OLLAMA ===
+ollama version is 0.40.11
+
+NAME          ID              SIZE      MODIFIED   
+qwen2.5:7b    845dbda0ea48    4.7 GB    3 days ago    
+
+Ollama API: ONLINE | 0.40.11
+Installed: qwen2.5:7b | 4.36 GB
