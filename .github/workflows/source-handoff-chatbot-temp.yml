@@ -1,0 +1,28 @@
+name: Temporary Chat BOT source handoff
+on:
+  push:
+    branches:
+      - tmp-source-handoff-chatbot-20261023
+permissions:
+  contents: read
+jobs:
+  handoff:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Download the exact requested source archives
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p source-handoff
+          curl --fail --location --retry 3 --retry-delay 2 "https://raw.githubusercontent.com/bottestprog-design/import/main/chat-BOT-v9.8.0-whatsapp-import-photo-send-fixes%20%281%29.zip" --output "source-handoff/chat-BOT-v9.8.0-whatsapp-import-photo-send-fixes (1).zip"
+          curl --fail --location --retry 3 --retry-delay 2 "https://raw.githubusercontent.com/bottestprog-design/import/main/chat-BOT-v4.1-v8-complete-repair-8.6.0.zip" --output "source-handoff/chat-BOT-v4.1-v8-complete-repair-8.6.0.zip"
+          unzip -t "source-handoff/chat-BOT-v9.8.0-whatsapp-import-photo-send-fixes (1).zip"
+          unzip -t "source-handoff/chat-BOT-v4.1-v8-complete-repair-8.6.0.zip"
+      - name: Upload source archives for local repair
+        uses: actions/upload-artifact@v4
+        with:
+          name: chatbot-v98-source-handoff
+          path: source-handoff/*.zip
+          if-no-files-found: error
+          retention-days: 1
