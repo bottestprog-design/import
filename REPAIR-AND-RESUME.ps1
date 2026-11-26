@@ -142,7 +142,7 @@ if ($state.Installed -and $state.AudioReady) {
     $runtimeFiles = @('LocalAI-Studio.bat','START-CHAT.ps1','STOP-CHAT.ps1','REPAIR-AND-RESUME.ps1',
         'INSTALL-PLATFORM.ps1','CHECK-LOCALAI.ps1','VERIFY-MODEL.ps1','VERIFY-PACKAGE.ps1',
         'IMPORT-FILTERS.ps1','RESTORE-OPENWEBUI-STYLE.ps1','LOCALAI-STUDIO-THEME.css',
-        'TEST-FILTERS.py','README-AR.md','MANIFEST-SHA256.txt')
+        'TEST-FILTERS.py','README-AR.md','MANIFEST-SHA256.txt','ENSURE-MODELS.ps1','MODELS.json')
     foreach ($fileName in $runtimeFiles) {
         $sourceFile = Join-Path $PSScriptRoot $fileName
         $targetFile = Join-Path $Platform $fileName
@@ -157,7 +157,11 @@ if ($state.Installed -and $state.AudioReady) {
         New-Item -ItemType Directory -Force -Path $targetFilters | Out-Null
         Copy-Item -Path (Join-Path $sourceFilters '*.py') -Destination $targetFilters -Force
     }
-    Write-Host 'Updated compact LocalAI Studio files. Existing Open WebUI, Ollama and Qwen data were reused.' -ForegroundColor Green
+    $modelManager = Join-Path $PSScriptRoot 'ENSURE-MODELS.ps1'
+    if (-not (Test-Path -LiteralPath $modelManager -PathType Leaf)) { throw 'ENSURE-MODELS.ps1 is missing from the package.' }
+    $modelProcess = Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') -ArgumentList @('-NoLogo','-NoProfile','-ExecutionPolicy','Bypass','-File',$modelManager) -Wait -PassThru -NoNewWindow
+    if ($modelProcess.ExitCode -ne 0) { throw 'Qwen/Whisper model verification failed. See D:\LocalAI\Platform\MODEL-STATUS.txt.' }
+    Write-Host 'Updated compact LocalAI Studio files and verified the configured models. Existing Ollama and WebUI data were reused.' -ForegroundColor Green
     exit 0
 }
 if ($state.Installed -and -not $state.AudioReady) {

@@ -80,10 +80,14 @@ try{
     if(-not(Test-Path -LiteralPath $SecretPath -PathType Leaf)){throw "Persistent WebUI secret missing: $SecretPath. Do not delete Data; run LocalAI-Studio.bat repair."}
     try{Invoke-RestMethod 'http://127.0.0.1:11434/api/version' -TimeoutSec 8|Out-Null}
     catch{throw 'Ollama is not running. Open Ollama, wait for its local API, then double-click LocalAI-Studio.bat.'}
+    $modelManager=Join-Path $PSScriptRoot 'ENSURE-MODELS.ps1'
+    if(-not(Test-Path -LiteralPath $modelManager -PathType Leaf)){throw "Model manager missing: $modelManager. Run LocalAI-Studio.bat repair."}
+    $managerOutput=@(& (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') -NoLogo -NoProfile -ExecutionPolicy Bypass -File $modelManager 2>&1)
+    if($LASTEXITCODE -ne 0){throw "Model verification failed. Review D:\LocalAI\Platform\MODEL-STATUS.txt. $($managerOutput -join ' ')"}
     $tags=Invoke-RestMethod 'http://127.0.0.1:11434/api/tags' -TimeoutSec 15
     $model=$tags.models|Where-Object{$_.name -eq 'local-qwen35:latest' -or $_.name -like 'local-qwen35*'}|Select-Object -First 1
     if(-not $model){$model=$tags.models|Where-Object{$_.name -like 'qwen3.5:9b-q4_K_M*'}|Select-Object -First 1}
-    if(-not $model){throw 'Existing Qwen 3.5 9B tag was not found. No model download was attempted.'}
+    if(-not $model){throw 'Qwen 3.5 9B is still missing after the model manager completed. Review MODEL-STATUS.txt.'}
     $ModelId=[string]$model.name
 
     $env:DATA_DIR=$Data

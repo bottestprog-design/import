@@ -195,19 +195,7 @@ try {
     # Verify the real running Ollama API and existing model tag. No ENGINE-STATUS marker is required.
     try { $version = Invoke-RestMethod -Uri 'http://127.0.0.1:11434/api/version' -TimeoutSec 8 }
     catch { throw 'Ollama local API is not responding on 127.0.0.1:11434. Start the Ollama app first; this installer will not restart it.' }
-    $tags = Invoke-RestMethod -Uri 'http://127.0.0.1:11434/api/tags' -TimeoutSec 20
-    $model = $tags.models | Where-Object { $_.name -eq 'local-qwen35:latest' -or $_.name -like 'local-qwen35*' } | Select-Object -First 1
-    if (-not $model) { $model = $tags.models | Where-Object { $_.name -like 'qwen3.5:9b-q4_K_M*' } | Select-Object -First 1 }
-    if (-not $model) { throw 'Neither local-qwen35 nor qwen3.5:9b-q4_K_M exists in Ollama. No model downloads were attempted.' }
-    $ModelId = [string]$model.name
-    Write-Host "[OK] Ollama $($version.version); found model $ModelId ($([math]::Round($model.size/1GB,2)) GB)." -ForegroundColor Green
-    $ModelStore = Join-Path $Root 'Models'
-    if (Test-Path (Join-Path $ModelStore 'manifests')) {
-        @("STATUS: API_READY_MODEL_TAG_PRESENT","Inference test: run D:\LocalAI\Platform\LocalAI-Studio.bat test","Ollama: $($version.version)","API: http://127.0.0.1:11434","Model: $ModelId","Model size bytes: $($model.size)","Model store: $ModelStore","Model files were verified by Ollama /api/tags; no files changed by this installer.") | Set-Content -Path $EngineStatusFile -Encoding UTF8
-        Set-Content -Path (Join-Path $Root 'MODEL-STORE-PATH.txt') -Value $ModelStore -Encoding UTF8
-    } else {
-        @("STATUS: API_READY_MODEL_TAG_PRESENT","Inference test: run D:\LocalAI\Platform\LocalAI-Studio.bat test","Ollama: $($version.version)","API: http://127.0.0.1:11434","Model: $ModelId","Model size bytes: $($model.size)","Model store: see Ollama server.log") | Set-Content -Path $EngineStatusFile -Encoding UTF8
-    }
+    Write-Host "[OK] Ollama $($version.version) is responding. The model manager will locate or provision the configured Qwen model." -ForegroundColor Green
 
     $drive = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='D:'"
     if (-not $drive -or ($drive.FreeSpace/1GB) -lt 20) { throw 'D: needs at least 20 GB free for Open WebUI, dependencies and audio cache.' }
@@ -292,18 +280,7 @@ try {
         else { $FfmpegLine = ($ff.StdOut -split "`r?`n" | Select-Object -First 1); Write-Host "[OK] $FfmpegLine" -ForegroundColor Green }
     }
 
-    # Pre-download Whisper Small in a short-lived child process; no model remains resident in RAM.
-    # If Hugging Face is temporarily unreachable, platform installation still completes with a warning.
-    $env:OMP_NUM_THREADS = '3'
-    $env:CT2_FORCE_CPU = '1'
-    $env:HF_HUB_ETAG_TIMEOUT = '30'
-    $env:HF_HUB_DOWNLOAD_TIMEOUT = '120'
-    $env:HF_HUB_DISABLE_TELEMETRY = '1'
-    $whisperCode = 'import os; from faster_whisper import WhisperModel; m=WhisperModel("small",device="cpu",compute_type="int8",download_root=os.environ["WHISPER_MODEL_DIR"]); print("WHISPER_SMALL_READY")'
-    $whisper = Invoke-NativeLogged -Executable $VenvPython -Arguments @('-c',$whisperCode) -Label 'Download and validate Whisper Small (multilingual CPU INT8)' -NoticeSeconds 180
-    if ($whisper.ExitCode -ne 0 -or $whisper.StdOut -notmatch 'WHISPER_SMALL_READY') {
-        $null = $Warnings.Add('Whisper Small download/load test did not complete. Open WebUI is installed; speech-to-text will need retry after network is available.')
-    }
+    # Whisper discovery and download are centralized in ENSURE-MODELS.ps1 after deployment.
 
     # Keep one stable random signing key. It is never printed or included in the package.
     $secret = Join-Path $Platform 'Secrets\webui_secret_key.txt'
@@ -335,7 +312,7 @@ try {
     $runtimeFiles = @('LocalAI-Studio.bat','START-CHAT.ps1','STOP-CHAT.ps1','REPAIR-AND-RESUME.ps1',
         'INSTALL-PLATFORM.ps1','CHECK-LOCALAI.ps1','VERIFY-MODEL.ps1','VERIFY-PACKAGE.ps1',
         'IMPORT-FILTERS.ps1','RESTORE-OPENWEBUI-STYLE.ps1','LOCALAI-STUDIO-THEME.css',
-        'TEST-FILTERS.py','README-AR.md','MANIFEST-SHA256.txt')
+        'TEST-FILTERS.py','README-AR.md','MANIFEST-SHA256.txt','ENSURE-MODELS.ps1','MODELS.json')
     foreach ($fileName in $runtimeFiles) {
         $sourceFile = Join-Path $PSScriptRoot $fileName
         if (-not (Test-Path -LiteralPath $sourceFile -PathType Leaf)) { throw "Required project file is missing: $fileName" }
@@ -347,6 +324,13 @@ try {
 
     $filterTest = Invoke-NativeLogged -Executable $VenvPython -Arguments @((Join-Path $Platform 'TEST-FILTERS.py'),'--filters-dir',$FilterDir) -Label 'Run filter syntax and behavior tests'
     if ($filterTest.ExitCode -ne 0 -or $filterTest.StdOut -notmatch 'FILTER_TESTS: SUCCESS') { throw 'Filter tests did not pass. See the filter-test child log.' }
+    $modelManager = Join-Path $Platform 'ENSURE-MODELS.ps1'
+    $modelCheck = Invoke-NativeLogged -Executable (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') -Arguments @('-NoLogo','-NoProfile','-ExecutionPolicy','Bypass','-File',$modelManager) -Label 'Find, verify and provision Qwen and Whisper models' -NoticeSeconds 180
+    if ($modelCheck.ExitCode -ne 0) { throw 'Required Qwen model could not be prepared. See the model manager report in D:\LocalAI\Platform.' }
+    $engineStatus = Get-Content -LiteralPath (Join-Path $Platform 'MODEL-STATUS.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    $ModelId = [string]$engineStatus.ollama.tag
+    if (-not $ModelId) { throw 'Model manager returned success without a Qwen model tag.' }
+    if ($engineStatus.whisper.status -ne 'ready') { $null = $Warnings.Add('Whisper Small is not ready; text chat remains available. Review MODEL-STATUS.txt.') }
     $status = if ($Warnings.Count -gt 0) { 'SUCCESS_WITH_WARNINGS' } else { 'SUCCESS' }
     $warningText = if ($Warnings.Count -gt 0) { $Warnings -join "`r`n- " } else { 'None' }
     @"
