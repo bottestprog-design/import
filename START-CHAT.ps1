@@ -51,7 +51,7 @@ function Repair-OpenWebUIWindowsTempPath {
 function Apply-LocalAITheme {
     $source=Join-Path $PSScriptRoot 'LOCALAI-STUDIO-THEME.css'
     $target=Join-Path $Platform 'LOCALAI-STUDIO-THEME.css'
-    if(Test-Path -LiteralPath $source -PathType Leaf){Copy-Item -LiteralPath $source -Destination $target -Force}
+    if((Test-Path -LiteralPath $source -PathType Leaf) -and ([IO.Path]::GetFullPath($source) -ne [IO.Path]::GetFullPath($target))){Copy-Item -LiteralPath $source -Destination $target -Force}
     if(-not(Test-Path -LiteralPath $target -PathType Leaf)){return}
     try{
         $code='import importlib.util,pathlib; s=importlib.util.find_spec("open_webui"); print(str(pathlib.Path(s.origin).parent/"static"/"custom.css") if s and s.origin else "")'

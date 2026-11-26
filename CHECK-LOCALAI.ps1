@@ -20,7 +20,7 @@ if (Test-Path $Venv) {
     $fixOut=@(& $Venv -c $fixProbe 2>&1)
     Add-Check 'Open WebUI Windows temp fix' (($LASTEXITCODE -eq 0) -and (($fixOut -join [Environment]::NewLine) -match 'WINDOWS_TEMP_FIX=PASS')) ($fixOut -join ' ')
 }
-Add-Check 'One-click launcher' (Test-Path (Join-Path $Platform 'LocalAI-Studio.bat')) (Join-Path $Platform 'START-LOCALAI.bat')
+Add-Check 'One-click launcher' (Test-Path (Join-Path $Platform 'LocalAI-Studio.bat')) (Join-Path $Platform 'LocalAI-Studio.bat')
 foreach($f in @('01-Trusted-Content-Guard.py','02-Accuracy-Thinking.py','03-Selective-Self-Review.py')) { $path=Join-Path $Platform ('Filters\'+$f); Add-Check "Filter $f" (Test-Path $path) $path }
 $log=Join-Path $Platform ('CHECK-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '.txt'); $results | Set-Content $log -Encoding UTF8
 Write-Host "`nReport: $log" -ForegroundColor Cyan
