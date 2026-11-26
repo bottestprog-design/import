@@ -1,10 +1,14 @@
-/* LocalAI Studio visual overlay for Open WebUI.
-   Uses the /static/custom.css hook. No application JS, logo, favicon or bundled assets are changed. */
+/* LocalAI Studio theme overlay for Open WebUI.
+   CSS only: no vendor JS, application assets, database, or bundled files are modified. */
 :root {
+  color-scheme: dark;
   --localai-accent: #39a8c8;
   --localai-accent-strong: #287fae;
   --localai-teal: #49c6b7;
   --localai-focus-ring: rgba(73, 198, 183, 0.42);
+  --localai-panel: rgba(19, 29, 42, 0.82);
+  --localai-panel-border: rgba(148, 163, 184, 0.14);
+  --localai-radius: 14px;
 }
 html, body {
   font-family: "Segoe UI", Tahoma, Arial, sans-serif;
@@ -16,12 +20,47 @@ button, a, input, textarea, select {
   transition: background-color 140ms ease-out, border-color 140ms ease-out,
               box-shadow 140ms ease-out, color 140ms ease-out;
 }
+button { border-radius: 11px; }
+input, textarea, select {
+  border-radius: 11px;
+}
 :focus-visible {
   outline: 2px solid var(--localai-teal) !important;
   outline-offset: 2px;
   box-shadow: 0 0 0 3px var(--localai-focus-ring);
 }
 button:disabled { cursor: not-allowed; }
+aside, [role="complementary"] {
+  border-color: var(--localai-panel-border);
+}
+nav a, aside a {
+  border-radius: 10px;
+}
+nav a:hover, aside a:hover {
+  background: rgba(57, 168, 200, 0.10);
+}
+textarea:focus, input:focus, select:focus {
+  border-color: var(--localai-accent) !important;
+}
+pre, .prose pre {
+  border: 1px solid var(--localai-panel-border);
+  border-radius: var(--localai-radius);
+  background: rgba(8, 15, 25, 0.72);
+}
+code, .prose code {
+  border-radius: 5px;
+}
+table {
+  border-collapse: separate;
+  border-spacing: 0;
+  overflow: hidden;
+  border-radius: 10px;
+}
+blockquote {
+  border-left-color: var(--localai-teal);
+}
+a { text-underline-offset: 3px; }
+img { border-radius: 10px; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     scroll-behavior: auto !important;
