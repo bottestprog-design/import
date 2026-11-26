@@ -1,0 +1,46 @@
+name: Windows validation
+
+on:
+  push:
+    branches:
+      - localai-platform-v3.0-rebuild
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: windows-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Parse all PowerShell scripts with Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $files = Get-ChildItem -LiteralPath . -Filter '*.ps1' -File
+          foreach ($file in $files) {
+            $tokens = $null
+            $errors = $null
+            $null = [System.Management.Automation.Language.Parser]::ParseFile($file.FullName, [ref]$tokens, [ref]$errors)
+            if ($errors.Count -gt 0) {
+              foreach ($parseError in $errors) {
+                Write-Host ("{0}:{1}:{2} {3}" -f $file.Name, $parseError.Extent.StartLineNumber, $parseError.Extent.StartColumnNumber, $parseError.Message)
+              }
+              exit 1
+            }
+            Write-Host ("[PASS] {0}" -f $file.Name) -ForegroundColor Green
+          }
+
+      - name: Verify package
+        shell: powershell
+        run: .\VERIFY-PACKAGE.ps1
+
+      - name: Test filters
+        shell: pwsh
+        run: |
+          python -m pip install --disable-pip-version-check pydantic
+          python -m py_compile .\TEST-FILTERS.py .\Filters\01-Trusted-Content-Guard.py .\Filters\02-Accuracy-Thinking.py .\Filters\03-Selective-Self-Review.py
+          python .\TEST-FILTERS.py --filters-dir .\Filters
