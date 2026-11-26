@@ -1,0 +1,45 @@
+name: LocalAI Studio package validation
+
+on:
+  push:
+    branches:
+      - localai-studio-v2.4.0
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-windows-powershell:
+    runs-on: windows-latest
+    steps:
+      - name: Check out exact source
+        uses: actions/checkout@v4
+
+      - name: Install Python for offline filter tests
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install filter test dependency
+        run: python -m pip install --disable-pip-version-check "pydantic>=2,<3"
+        shell: powershell
+
+      - name: Verify package manifest and Windows PowerShell 5.1 syntax
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & "$PWD\VERIFY-PACKAGE.ps1"
+          if ($LASTEXITCODE -ne 0) { throw "Package verification failed with exit code $LASTEXITCODE" }
+        shell: powershell
+
+      - name: Test native exit-code runner under Windows PowerShell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & "$PWD\TEST-EXITCODE-RUNNER.ps1"
+          if ($LASTEXITCODE -ne 0) { throw "Native runner tests failed with exit code $LASTEXITCODE" }
+        shell: powershell
+
+      - name: Test filter syntax, hooks, model matching and review safety
+        run: python TEST-FILTERS.py --filters-dir Filters
+        shell: powershell

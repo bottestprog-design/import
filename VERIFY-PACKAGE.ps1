@@ -6,7 +6,7 @@ if(-not(Test-Path -LiteralPath $manifestPath -PathType Leaf)){
     exit 2
 }
 $lines=@(Get-Content -LiteralPath $manifestPath -Encoding ASCII | Where-Object {-not [string]::IsNullOrWhiteSpace($_) -and -not $_.TrimStart().StartsWith('#')})
-if($lines.Count -lt 20){Write-Host 'FAIL: Manifest is incomplete.' -ForegroundColor Red;exit 2}
+if($lines.Count -ne 35){Write-Host ("FAIL: Expected 35 signed files; manifest contains {0}." -f $lines.Count) -ForegroundColor Red;exit 2}
 
 $expected=@{}
 $ok=0
@@ -38,7 +38,7 @@ foreach($line in $lines){
     }
     $actual=(Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
     if($actual -ne $hash){
-        Write-Host "HASH MISMATCH: $relative" -ForegroundColor Red
+        Write-Host ("HASH MISMATCH: {0}; expected {1}; actual {2}" -f $relative,$hash,$actual) -ForegroundColor Red
         $bad++
     }else{
         Write-Host "OK: $relative" -ForegroundColor Green
@@ -47,7 +47,7 @@ foreach($line in $lines){
 }
 
 # Reject files that are not in the integrity manifest.
-$actualFiles=@(Get-ChildItem -LiteralPath $root -Recurse -File | Where-Object {$_.FullName -ne $manifestPath})
+$actualFiles=@(Get-ChildItem -LiteralPath $root -Recurse -File -Force | Where-Object {$_.FullName -ne $manifestPath})
 foreach($file in $actualFiles){
     $relative=$file.FullName.Substring($root.Length).TrimStart('\').Replace('\','/')
     if(-not $expected.ContainsKey($relative)){
@@ -57,7 +57,7 @@ foreach($file in $actualFiles){
 }
 
 # Parse every bundled PowerShell script using the Windows PowerShell 5.1 parser.
-foreach($scriptFile in (Get-ChildItem -LiteralPath $root -Filter '*.ps1' -File -Recurse)){
+foreach($scriptFile in (Get-ChildItem -LiteralPath $root -Filter '*.ps1' -File -Recurse -Force)){
     $tokens=$null
     $parseErrors=$null
     [System.Management.Automation.Language.Parser]::ParseFile($scriptFile.FullName,[ref]$tokens,[ref]$parseErrors) | Out-Null
@@ -77,7 +77,7 @@ $runnerText=Get-Content -LiteralPath (Join-Path $root 'RUN-NATIVE-WITH-EXITCODE.
 if($installerText -notmatch '(?m)^function\s+Invoke-NativeLogged\s*\{'){$bad++;Write-Host 'MISSING REQUIRED FUNCTION: Invoke-NativeLogged' -ForegroundColor Red}
 if($repairText -notmatch '(?m)^function\s+Invoke-CapturedProcess(?:\s|\()'){$bad++;Write-Host 'MISSING REQUIRED FUNCTION: Invoke-CapturedProcess' -ForegroundColor Red}
 if($runnerText -notmatch '\$LASTEXITCODE'){$bad++;Write-Host 'RUNNER DOES NOT CAPTURE LASTEXITCODE' -ForegroundColor Red}
-foreach($name in @('DIAGNOSTICS.ps1','BACKUP-LOCALAI.ps1','TEST-EXITCODE-RUNNER.ps1')){
+foreach($name in @('DIAGNOSTICS.ps1','BACKUP-LOCALAI.ps1','TEST-EXITCODE-RUNNER.ps1','RUN-NATIVE-WITH-EXITCODE.ps1')){
     if(-not(Test-Path -LiteralPath (Join-Path $root $name) -PathType Leaf)){$bad++;Write-Host "MISSING REQUIRED TOOL: $name" -ForegroundColor Red}
 }
 Write-Host ""

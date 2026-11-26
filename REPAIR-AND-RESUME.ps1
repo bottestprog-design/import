@@ -114,7 +114,7 @@ print(json.dumps({"version":version,"core_import":core_import,"core_error":local
     if(Test-Path -LiteralPath $whisperRoot -PathType Container){
         $whisperFile=Get-ChildItem -LiteralPath $whisperRoot -Filter 'model.bin' -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
     }
-    $whisperReady=($null -ne $whisperFile)
+    $whisperReady=($null -ne $whisperFile -and $whisperFile.Length -ge 100MB)
     return [pscustomobject]@{Installed=$core;Version=$info.version;AudioReady=($info.audio -eq $true -and $info.av_version -eq '14.0.1');WhisperReady=$whisperReady;Detail=($info | ConvertTo-Json -Compress)}
 }
 function Get-ActiveInstallProcesses {
@@ -162,7 +162,7 @@ function Watch-Installer {
 Write-Host 'LOCALAI STUDIO PLATFORM REPAIR / RESUME v2.4.0' -ForegroundColor Cyan
 Write-Host 'PowerShell 5.1-safe package probing; no pip stderr is treated as a terminating error.'
 if (-not (Test-Path -LiteralPath $InstallerScript -PathType Leaf)) { throw 'INSTALL-PLATFORM.ps1 is missing from this extracted package.' }
-New-Item -ItemType Directory -Force -Path $Logs | Out-Null
+New-Item -ItemType Directory -Force -Path $Logs,$Platform | Out-Null
 
 # Exclusive OS file handle: concurrent launchers cannot pass this point together.
 $lockPath=Join-Path $Logs 'platform-continuation.install.lock'
@@ -172,13 +172,15 @@ try {
     Write-Host 'Another LocalAI installer/recovery process already owns the installation lock. No second installer was started.' -ForegroundColor Yellow
     exit 10
 }
+$active=@(Get-ActiveInstallProcesses)
+if ($active.Count -gt 0) { Watch-Installer }
+
+# Deploy maintenance tools only after any legacy installer has finished.
 foreach ($maintenanceFile in @('DIAGNOSTICS.ps1','DIAGNOSTICS.bat','BACKUP-LOCALAI.ps1','BACKUP-LOCALAI.bat')) {
     $source = Join-Path $PSScriptRoot $maintenanceFile
     if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { throw "Maintenance file missing from package: $maintenanceFile" }
     Copy-Item -LiteralPath $source -Destination (Join-Path $Platform $maintenanceFile) -Force
 }
-$active=@(Get-ActiveInstallProcesses)
-if ($active.Count -gt 0) { Watch-Installer }
 $state=Get-OpenWebUIState
 Write-Host ('Open WebUI package state: Version={0}; CoreReady={1}; AudioReady={2}; WhisperCacheReady={3}' -f $state.Version,$state.Installed,$state.AudioReady,$state.WhisperReady) -ForegroundColor Cyan
 if ($state.Installed -and $state.AudioReady -and $state.WhisperReady) {

@@ -6,23 +6,65 @@ $Data = Join-Path $Platform 'Data'
 $Logs = Join-Path $Root 'Logs'
 $FilterDir = Join-Path $Platform 'Filters'
 $Cache = Join-Path $Root 'Cache'
-# Verify the extracted package before touching the target installation.
+# Verify the complete extracted package before touching the target installation.
 $manifestPath = Join-Path $PSScriptRoot 'MANIFEST-SHA256.txt'
 if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) { throw 'Package manifest is missing. Re-extract the complete ZIP before installing.' }
-$manifestLines = Get-Content -LiteralPath $manifestPath -Encoding UTF8 | Where-Object { -not [string]::IsNullOrWhiteSpace($_) -and -not $_.TrimStart().StartsWith('#') }
-if (@($manifestLines).Count -lt 10) { throw 'Package manifest is incomplete. Re-download and re-extract the ZIP.' }
+$manifestLines = @(Get-Content -LiteralPath $manifestPath -Encoding UTF8 | Where-Object { -not [string]::IsNullOrWhiteSpace($_) -and -not $_.TrimStart().StartsWith('#') })
+if ($manifestLines.Count -ne 35) { throw "Package manifest must contain 35 entries; found $($manifestLines.Count). Re-download the complete v2.4.0 package." }
+$expectedPackageFiles = @{}
+$packageRoot = [IO.Path]::GetFullPath($PSScriptRoot).TrimEnd('\') + '\'
 foreach ($manifestLine in $manifestLines) {
-    if ($manifestLine -notmatch '^([0-9A-Fa-f]{64})\s+(.+)$') { throw "Invalid manifest line: $manifestLine" }
+    if ($manifestLine -notmatch '^([0-9A-Fa-f]{64})\s{2}(.+)$') { throw "Invalid manifest line: $manifestLine" }
     $expectedHash = $matches[1].ToLowerInvariant()
-    $relativePath = $matches[2].Trim()
-    if ($relativePath.StartsWith('*')) { $relativePath = $relativePath.Substring(1) }
-    $candidatePath = Join-Path $PSScriptRoot $relativePath
-    if (-not (Test-Path -LiteralPath $candidatePath -PathType Leaf)) { throw "Package file is missing: $relativePath" }
-    $actualHash = (Get-FileHash -LiteralPath $candidatePath -Algorithm SHA256).Hash.ToLowerInvariant()
-    if ($actualHash -ne $expectedHash) { throw "Package integrity mismatch: $relativePath. Extract the ZIP again." }
+    $relativePath = $matches[2].Trim().Replace('\','/')
+    if ([IO.Path]::IsPathRooted($relativePath) -or $relativePath -match '(^|/)\.\.(/|$)' -or $relativePath.Contains(':')) {
+        throw "Unsafe package path in manifest: $relativePath"
+    }
+    if ($expectedPackageFiles.ContainsKey($relativePath)) { throw "Duplicate manifest path: $relativePath" }
+    $candidateFullPath = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot ($relativePath.Replace('/',[IO.Path]::DirectorySeparatorChar))))
+    if (-not $candidateFullPath.StartsWith($packageRoot,[StringComparison]::OrdinalIgnoreCase)) {
+        throw "Manifest path escapes the package folder: $relativePath"
+    }
+    if (-not (Test-Path -LiteralPath $candidateFullPath -PathType Leaf)) { throw "Package file is missing: $relativePath" }
+    $actualHash = (Get-FileHash -LiteralPath $candidateFullPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($actualHash -ne $expectedHash) { throw "Package integrity mismatch: $relativePath. Expected $expectedHash; actual $actualHash. Extract the ZIP again." }
+    $expectedPackageFiles[$relativePath] = $true
 }
-Write-Host "[OK] Package integrity verified ($(@($manifestLines).Count) files)." -ForegroundColor Green
-New-Item -ItemType Directory -Force -Path $Root,$Platform,$Data,$Logs,$FilterDir,$Cache,(Join-Path $Cache 'pip'),(Join-Path $Data 'cache\huggingface'),(Join-Path $Data 'cache\whisper\models'),(Join-Path $Platform 'Secrets') | Out-Null
+$actualPackageFiles = @(Get-ChildItem -LiteralPath $PSScriptRoot -Recurse -File -Force | Where-Object { $_.FullName -ne $manifestPath })
+foreach ($file in $actualPackageFiles) {
+    $relative = $file.FullName.Substring($packageRoot.Length).Replace('\','/')
+    if (-not $expectedPackageFiles.ContainsKey($relative)) { throw "Unlisted file found in package: $relative. Re-download the complete package." }
+}
+foreach ($scriptFile in (Get-ChildItem -LiteralPath $PSScriptRoot -Filter '*.ps1' -File -Recurse -Force)) {
+    $tokens = $null
+    $parseErrors = $null
+    [System.Management.Automation.Language.Parser]::ParseFile($scriptFile.FullName,[ref]$tokens,[ref]$parseErrors) | Out-Null
+    if ($parseErrors.Count -gt 0) {
+        $details = ($parseErrors | ForEach-Object { '{0}:{1} {2}' -f $_.Extent.StartLineNumber,$_.Extent.StartColumnNumber,$_.Message }) -join '; '
+        throw "PowerShell syntax check failed in $($scriptFile.FullName): $details"
+    }
+}
+Write-Host "[OK] Package integrity and PowerShell syntax verified ($($manifestLines.Count) signed files)." -ForegroundColor Green
+# Direct installer invocations acquire the same exclusive lock used by recovery.
+# A child launched by REPAIR-AND-RESUME is allowed to use its parent's lock.
+New-Item -ItemType Directory -Force -Path $Root,$Logs | Out-Null
+$script:InstallLockStream = $null
+try {
+    $script:InstallLockStream = [IO.File]::Open((Join-Path $Logs 'platform-continuation.install.lock'),[IO.FileMode]::OpenOrCreate,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)
+} catch {
+    $parentIsRecovery = $false
+    try {
+        $currentProcess = Get-CimInstance Win32_Process -Filter "ProcessId=$PID" -ErrorAction Stop
+        $parentProcess = Get-CimInstance Win32_Process -Filter "ProcessId=$($currentProcess.ParentProcessId)" -ErrorAction Stop
+        $parentIsRecovery = ([string]$parentProcess.CommandLine -match '(?i)REPAIR-AND-RESUME\.ps1')
+    } catch { $parentIsRecovery = $false }
+    if (-not $parentIsRecovery) {
+        Write-Host 'Another LocalAI installer/recovery process owns the installation lock. No changes were made.' -ForegroundColor Yellow
+        exit 10
+    }
+    Write-Host 'Using the exclusive installation lock owned by REPAIR-AND-RESUME.' -ForegroundColor DarkGray
+}
+New-Item -ItemType Directory -Force -Path $Root,$Platform,$Data,$FilterDir,$Cache,(Join-Path $Cache 'pip'),(Join-Path $Data 'cache\huggingface'),(Join-Path $Data 'cache\whisper\models'),(Join-Path $Platform 'Secrets') | Out-Null
 $script:Logs = $Logs
 $LogFile = Join-Path $Logs ('platform-continuation-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '.log')
 Start-Transcript -Path $LogFile -Force | Out-Null
@@ -224,7 +266,7 @@ function Get-Ffmpeg {
 }
 
 try {
-    Write-Host 'LOCAL AI - PLATFORM CONTINUATION INSTALLER v2.2' -ForegroundColor Cyan
+    Write-Host 'LOCALAI STUDIO PLATFORM INSTALLER v2.4.0' -ForegroundColor Cyan
     Write-Host 'This installer starts AFTER Ollama and Qwen are installed.'
     Write-Host 'It will NOT reinstall Ollama, download Qwen, delete model blobs, or change the Ollama model store.'
     if (Test-Path $StatusFile) { Copy-Item $StatusFile (Join-Path $Platform ('PLATFORM-STATUS-backup-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '.txt')) -Force }
@@ -435,4 +477,5 @@ finally {
         [void][LocalAI.PowerManagement]::SetThreadExecutionState([Convert]::ToUInt32('2147483648'))
     }
     try { Stop-Transcript | Out-Null } catch {}
+    if ($script:InstallLockStream) { try { $script:InstallLockStream.Dispose() } catch {} }
 }

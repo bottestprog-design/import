@@ -86,7 +86,7 @@ class Filter:
         with urllib.request.urlopen(req, timeout=self.valves.timeout_seconds) as response:
             result = json.loads(response.read().decode("utf-8"))
         # Do not accept a reviewer completion that itself hit its output limit.
-        if result.get("done") is False or result.get("done_reason") == "length":
+        if result.get("done") is not True or result.get("done_reason") == "length":
             return ""
         text = result.get("message", {}).get("content", "")
         return text.strip() if isinstance(text, str) else ""

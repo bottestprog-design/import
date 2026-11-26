@@ -45,8 +45,14 @@ foreach($f in @('01-Trusted-Content-Guard.py','02-Accuracy-Thinking.py','03-Sele
 }
 $whisperRoot=Join-Path $Platform 'Data\cache\whisper\models'
 $whisperFile=$null
-if(Test-Path -LiteralPath $whisperRoot){$whisperFile=Get-ChildItem -LiteralPath $whisperRoot -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1}
-Add-Check 'Whisper cache' ($null -ne $whisperFile) $(if($whisperFile){$whisperRoot}else{'not found; text chat remains available'})
+if(Test-Path -LiteralPath $whisperRoot){
+    $whisperFile=Get-ChildItem -LiteralPath $whisperRoot -Filter 'model.bin' -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+}
+$whisperReady=($null -ne $whisperFile -and $whisperFile.Length -ge 100MB)
+Add-Check 'Whisper model cache' $whisperReady $(if($whisperReady){"$whisperRoot ($([math]::Round($whisperFile.Length/1MB,1)) MB)"}else{'model.bin is missing or incomplete; text chat remains available'})
 $log=Join-Path $Platform ('CHECK-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '.txt')
 $results | Set-Content -LiteralPath $log -Encoding UTF8
 Write-Host ("Report: " + $log) -ForegroundColor Cyan
+$failed=@($results | Where-Object { $_.StartsWith('[FAIL]') }).Count
+if($failed -gt 0){exit 1}
+exit 0
