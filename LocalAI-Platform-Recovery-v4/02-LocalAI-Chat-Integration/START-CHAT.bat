@@ -1,0 +1,30 @@
+@echo off
+setlocal EnableExtensions
+title Local AI - Start Chat
+chcp 65001 >nul
+cd /d "%~dp0"
+echo.
+echo === Local AI - Start Chat ===
+echo This window will stay open and show any error.
+echo.
+if not exist "D:\LocalAI\Platform\START-CHAT.ps1" (
+  echo ERROR: Required PowerShell script was not found.
+  set "RC=2"
+  goto :finish
+)
+set "PS=%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe"
+if not exist "%PS%" set "PS=powershell.exe"
+"%PS%" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "D:\LocalAI\Platform\START-CHAT.ps1"
+set "RC=%ERRORLEVEL%"
+if "%RC%"=="0" (
+  echo SUCCESS: Open WebUI is running in the background.
+) else (
+  echo.
+  echo FAILED with exit code %RC%. Check Platform\Data\open-webui-*.stderr.log.
+  echo Run DIAGNOSE.bat from the extracted FULL package and send its report.
+)
+:finish
+echo.
+echo Press any key to close this window.
+pause >nul
+exit /b %RC%
