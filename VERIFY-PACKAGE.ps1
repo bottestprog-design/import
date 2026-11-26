@@ -115,6 +115,8 @@ if (-not (Test-Path -LiteralPath $launcherPath -PathType Leaf)) {
         'IMPORT-FILTERS.ps1',
         'RESTORE-OPENWEBUI-STYLE.ps1',
         'ENSURE-MODELS.ps1',
+        'WHISPER-MODEL-MANAGER.py',
+        'TEST-MODEL-MANAGER.py',
         'MODELS.json',
         'TEST-FILTERS.py',
         'Filters\01-Trusted-Content-Guard.py',
@@ -137,6 +139,7 @@ if (-not (Test-Path -LiteralPath $launcherPath -PathType Leaf)) {
             if ([int]$modelConfig.schema_version -ne 1 -or
                 [string]$modelConfig.ollama.official_pull_tag -ne 'qwen3.5:9b-q4_K_M' -or
                 [string]$modelConfig.whisper.model_size -ne 'base' -or
+                [string]$modelConfig.whisper.repository -ne 'Systran/faster-whisper-base' -or
                 [string]::IsNullOrWhiteSpace([string]$modelConfig.ollama.preferred_tag) -or
                 [string]::IsNullOrWhiteSpace([string]$modelConfig.ollama.official_pull_tag) -or
                 [string]::IsNullOrWhiteSpace([string]$modelConfig.whisper.model_size) -or

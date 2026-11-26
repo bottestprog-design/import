@@ -42,6 +42,7 @@ jobs:
         shell: pwsh
         run: |
           python -m pip install --disable-pip-version-check pydantic
-          python -m py_compile .\TEST-FILTERS.py .\Filters\01-Trusted-Content-Guard.py .\Filters\02-Accuracy-Thinking.py .\Filters\03-Selective-Self-Review.py
+          python -m py_compile .\TEST-FILTERS.py .\TEST-MODEL-MANAGER.py .\WHISPER-MODEL-MANAGER.py .\Filters\01-Trusted-Content-Guard.py .\Filters\02-Accuracy-Thinking.py .\Filters\03-Selective-Self-Review.py
           python -m json.tool .\MODELS.json > $null
           python .\TEST-FILTERS.py --filters-dir .\Filters
+          python .\TEST-MODEL-MANAGER.py

@@ -16,7 +16,7 @@ $script:Status = [ordered]@{
     schema_version = 1
     checked_at = (Get-Date).ToString('o')
     ollama = [ordered]@{ status = 'pending'; tag = ''; source = ''; store = ''; size_bytes = 0 }
-    whisper = [ordered]@{ status = 'pending'; model = 'base'; path = ''; cache_dir = '' }
+    whisper = [ordered]@{ status = 'pending'; model = ''; path = ''; cache_dir = ''; source = '' }
     warnings = @()
     error = ''
 }
@@ -31,8 +31,9 @@ function Save-ModelStatus {
         "Qwen: $($script:Status.ollama.status)"
         "Qwen tag: $($script:Status.ollama.tag)"
         "Ollama store: $($script:Status.ollama.store)"
-        "Whisper Base: $($script:Status.whisper.status)"
+        "Whisper $($script:Status.whisper.model): $($script:Status.whisper.status)"
         "Whisper path: $($script:Status.whisper.path)"
+        "Whisper source: $($script:Status.whisper.source)"
         "Warnings: $(@($script:Warnings).Count)"
     ) | Set-Content -LiteralPath (Join-Path $Platform 'MODEL-STATUS.txt') -Encoding UTF8
     @(
@@ -251,7 +252,7 @@ function Ensure-QwenModel {
     $importedTag = ''
 
     foreach ($store in (Get-ModelStoreRoots)) {
-        if ([IO.Path]::GetFullPath($store).TrimEnd('\') -eq [IO.Path]::GetFullPath($activeStore).TrimEnd('\')) { continue }
+        if (-not (Test-Path -LiteralPath $store -PathType Container)) { continue }
         $manifestRoot = Join-Path $store 'manifests'
         if (-not (Test-Path -LiteralPath $manifestRoot -PathType Container)) { continue }
         $manifestFiles = @(Get-ChildItem -LiteralPath $manifestRoot -File -Recurse -ErrorAction SilentlyContinue |
@@ -334,124 +335,69 @@ function Ensure-QwenModel {
     $script:Status.ollama.tag = $selected
     if ($model) { $script:Status.ollama.size_bytes = [long]$model.size }
     if ($script:Status.ollama.source -like 'Downloaded*') { $script:Status.ollama.status = 'ready_downloaded' }
-    else { $script:Status.ollama.status = 'ready_imported' }
-    Write-Host "[OK] Qwen model is ready: $selected." -ForegroundColor Green
-}
+    else { $script:Status.ollama.status = 'reafunction Ensure-WhisperModel {
+    $modelId = [string]$script:Config.whisper.repository
+    $modelSize = [string]$script:Config.whisper.model_size
+    $relative = [string]$script:Config.whisper.cache_relative_path
+    if ([string]::IsNullOrWhiteSpace($relative)) { throw 'MODELS.json whisper.cache_relative_path is empty.' }
+    $modelDir = Join-Path $Platform ($relative -replace '^Data[\\/]', 'Data\')
+    $helper = Join-Path $PSScriptRoot 'WHISPER-MODEL-MANAGER.py'
+    if (-not (Test-Path -LiteralPath $helper -PathType Leaf)) { throw "Whisper model helper is missing: $helper" }
 
-function Ensure-WhisperModel {
-    $modelDir = Join-Path $Data 'cache\whisper\models'
-    New-Item -ItemType Directory -Force -Path $modelDir | Out-Null
     $env:HF_HUB_ETAG_TIMEOUT = '30'
     $env:HF_HUB_DOWNLOAD_TIMEOUT = '120'
     $env:HF_HUB_DISABLE_TELEMETRY = '1'
-    $env:LOCALAI_WHISPER_MODEL_DIR = $modelDir
     $env:HF_HOME = Join-Path $Data 'cache\huggingface'
     $env:HUGGINGFACE_HUB_CACHE = Join-Path $env:HF_HOME 'hub'
-    New-Item -ItemType Directory -Force -Path $env:HF_HOME,$env:HUGGINGFACE_HUB_CACHE | Out-Null
+    New-Item -ItemType Directory -Force -Path $env:HF_HOME,$env:HUGGINGFACE_HUB_CACHE,(Split-Path -Parent $modelDir) | Out-Null
 
-    $pythonCode = @'
-import json
-import os
-import shutil
-import sys
-from pathlib import Path
-from faster_whisper.utils import download_model
+    $cacheRoots = @(
+        $env:HUGGINGFACE_HUB_CACHE,
+        (Join-Path $env:USERPROFILE '.cache\huggingface\hub'),
+        (Join-Path $env:LOCALAPPDATA 'huggingface\hub')
+    ) + @($script:Config.whisper.search_cache_roots)
+    $pythonArgs = @($helper,'--model-id',$modelId,'--output-dir',$modelDir)
+    foreach ($cacheRoot in $cacheRoots) {
+        if (-not [string]::IsNullOrWhiteSpace([string]$cacheRoot)) {
+            $pythonArgs += @('--cache-root',[string]$cacheRoot)
+        }
+    }
+    if (-not [bool]$script:Config.whisper.auto_download_when_missing) { $pythonArgs += '--no-download' }
 
-target = Path(os.environ["LOCALAI_WHISPER_MODEL_DIR"]).resolve()
-required = ("config.json", "model.bin", "tokenizer.json", "vocabulary.txt")
-
-def complete(path):
-    path = Path(path)
-    if not path.is_dir():
-        return False
-    if not all((path / name).is_file() for name in required):
-        return False
-    if (path / "model.bin").stat().st_size < 1000000:
-        return False
-    try:
-        config = json.loads((path / "config.json").read_text(encoding="utf-8"))
-        return isinstance(config, dict) and "num_mel_bins" in config and "model_type" in config
-    except Exception:
-        return False
-
-if complete(target):
-    print("WHISPER_READY=" + str(target))
-    sys.exit(0)
-
-candidates = [
-    target,
-    Path(os.environ.get("USERPROFILE", "")) / ".cache" / "huggingface" / "hub",
-    Path(os.environ.get("LOCALAPPDATA", "")) / "huggingface" / "hub",
-    Path(os.environ.get("HF_HOME", "")) / "hub",
-    Path(r"D:\LocalAI\Models"),
-    Path(r"D:\LocalAI\Whisper"),
-]
-seen = set()
-for cache in candidates:
-    try:
-        if not cache.exists():
-            continue
-        key = str(cache.resolve()).lower()
-        if key in seen:
-            continue
-        seen.add(key)
-        snapshot = Path(download_model("base", cache_dir=str(cache), local_files_only=True))
-        if not complete(snapshot):
-            continue
-        target.mkdir(parents=True, exist_ok=True)
-        for name in required:
-            shutil.copy2(str(snapshot / name), str(target / name))
-        src = snapshot / "preprocessor_config.json"
-        if src.is_file():
-            shutil.copy2(str(src), str(target / "preprocessor_config.json"))
-        if complete(target):
-            print("WHISPER_READY=" + str(target))
-            sys.exit(0)
-    except Exception:
-        pass
-
-try:
-    target.mkdir(parents=True, exist_ok=True)
-    print("Downloading multilingual Whisper Base to " + str(target), flush=True)
-    result = Path(download_model("base", output_dir=str(target), local_files_only=False))
-    if not complete(result):
-        raise RuntimeError("download completed but required model files or config are incomplete")
-    print("WHISPER_READY=" + str(result.resolve()))
-    sys.exit(0)
-except Exception as exc:
-    print("WHISPER_FAILED=" + type(exc).__name__ + ": " + str(exc), file=sys.stderr)
-    sys.exit(10)
-'@
-
-    Write-Host '[MODEL] Searching local Whisper Base caches before any download...' -ForegroundColor Cyan
-    $previousPreference = $ErrorActionPreference
+    Write-Host "[MODEL] Reusing local Whisper $modelSize files when available; otherwise downloading $modelId..." -ForegroundColor Cyan
+    $oldPreference = $ErrorActionPreference
     try {
         $ErrorActionPreference = 'Continue'
-        $output = @(& $Python -c $pythonCode 2>&1)
+        $output = @(& $Python @pythonArgs 2>&1)
         $pythonExit = $LASTEXITCODE
-    } finally {
-        $ErrorActionPreference = $previousPreference
-    }
+    } finally { $ErrorActionPreference = $oldPreference }
     $combined = $output -join [Environment]::NewLine
-    if ($pythonExit -eq 0 -and $combined -match 'WHISPER_READY=(.+)') {
+    if ($pythonExit -eq 0 -and $combined -match '(?m)^WHISPER_READY=(.+)$') {
+        $script:Status.whisper.model = $modelSize
         $script:Status.whisper.status = 'ready'
         $script:Status.whisper.path = $matches[1].Trim()
         $script:Status.whisper.cache_dir = $modelDir
-        Write-Host "[OK] Whisper Base is ready: $($script:Status.whisper.path)" -ForegroundColor Green
+        if ($combined -match '(?m)^WHISPER_SOURCE=(.+)$') { $script:Status.whisper.source = $matches[1].Trim() }
+        Write-Host "[OK] Whisper $modelSize is ready: $($script:Status.whisper.path)" -ForegroundColor Green
         return
     }
 
-    $warning = 'Whisper Base is not ready: ' + $combined
+    $warning = "Whisper $modelSize is not ready (Python exit $pythonExit): $combined"
+    $script:Status.whisper.model = $modelSize
     $script:Status.whisper.status = 'warning_missing_or_download_failed'
     $script:Status.whisper.cache_dir = $modelDir
     $script:Warnings.Add($warning)
     Write-Host "[WARN] $warning" -ForegroundColor Yellow
     if ($RequireWhisper) { throw $warning }
 }
+e-Host "[WARN] $warning" -ForegroundColor Yellow
+    if ($RequireWhisper) { throw $warning }
+}
 
 try {
     if (-not (Test-Path -LiteralPath $ConfigPath -PathType Leaf)) { throw "Missing model configuration: $ConfigPath" }
     $script:Config = Get-Content -LiteralPath $ConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    $script:Status.whisper.model = [string]$script:Config.whisper.model_size
     if ([int]$script:Config.schema_version -ne 1) { throw 'Unsupported MODELS.json schema version.' }
     if (-not (Test-Path -LiteralPath $Python -PathType Leaf)) { throw "Project Python is missing: $Python. Run LocalAI-Studio.bat repair." }
 
@@ -463,7 +409,7 @@ try {
     $apiVersion = Invoke-RestMethod -Uri ($BaseUrl + '/api/version') -TimeoutSec 8 -ErrorAction Stop
     $script:OllamaExe = Get-OllamaExe
     $script:Status.ollama.store = Get-ActiveModelStore
-    Write-Host "Ollama $($apiVersion.version) is online. Checking Qwen 3.5 9B and Whisper Base." -ForegroundColor Cyan
+    Write-Host "Ollama $($apiVersion.version) is online. Checking Qwen and Whisper $($script:Config.whisper.model_size)." -ForegroundColor Cyan
 
     Ensure-QwenModel
     Ensure-WhisperModel
