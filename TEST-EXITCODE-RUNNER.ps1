@@ -29,6 +29,41 @@ try{
     if(([IO.File]::ReadAllText($exitFile)).Trim() -ne '0'){throw 'Runner returned a failure for the spaced-path echo test.'}
     if([IO.File]::ReadAllText($stdout) -notmatch 'LocalAI native argument test'){throw 'Runner lost native stdout for the spaced-path echo test.'}
     Write-Host '[PASS] Native stdout and file paths containing spaces are preserved.' -ForegroundColor Green
+
+    $pythonCommand=Get-Command python.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+    $pythonExe=if($pythonCommand){if($pythonCommand.Source){$pythonCommand.Source}else{$pythonCommand.Path}}else{$null}
+    if($pythonExe -and $pythonExe -notmatch '(?i)\\Microsoft\\WindowsApps\\python\.exe
+}catch{
+    $failed=$true
+    Write-Host ("EXITCODE_RUNNER_TESTS: FAILED - " + $_.Exception.Message) -ForegroundColor Red
+}finally{
+    try{Remove-Item -LiteralPath $temp -Recurse -Force -ErrorAction SilentlyContinue}catch{}
+}
+if($failed){exit 1}
+exit 0
+){
+        $pythonCode='import sys;print(f"{sys.version_info.major}.{sys.version_info.minor}")'
+        $pythonStdout=Join-Path $temp 'python fstring stdout.txt'
+        $pythonStderr=Join-Path $temp 'python fstring stderr.txt'
+        $pythonExit=Join-Path $temp 'python fstring exitcode.txt'
+        $pythonArgs=[string[]]@('-c',$pythonCode)
+        $pythonJson=ConvertTo-Json -InputObject ([pscustomobject]@{items=$pythonArgs}) -Compress
+        $pythonEncoded=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($pythonJson))
+        & $runner -Executable $pythonExe -ArgumentsBase64 $pythonEncoded -StdOutPath $pythonStdout -StdErrPath $pythonStderr -ExitCodePath $pythonExit
+        if(-not(Test-Path -LiteralPath $pythonExit -PathType Leaf)){throw 'Python quoting test did not produce an exit code.'}
+        if(([IO.File]::ReadAllText($pythonExit)).Trim() -ne '0'){throw ('Python -c quoting failed: '+[IO.File]::ReadAllText($pythonStderr))}
+        if(([IO.File]::ReadAllText($pythonStdout)).Trim() -notmatch '^\d+\.\d+
+}catch{
+    $failed=$true
+    Write-Host ("EXITCODE_RUNNER_TESTS: FAILED - " + $_.Exception.Message) -ForegroundColor Red
+}finally{
+    try{Remove-Item -LiteralPath $temp -Recurse -Force -ErrorAction SilentlyContinue}catch{}
+}
+if($failed){exit 1}
+exit 0
+){throw ('Python version output invalid: '+[IO.File]::ReadAllText($pythonStdout))}
+        Write-Host '[PASS] Python -c f-string quoting is preserved.' -ForegroundColor Green
+    }else{Write-Host '[SKIP] No installed Python executable; setup will install it when required.' -ForegroundColor Yellow}
     Write-Host 'EXITCODE_RUNNER_TESTS: SUCCESS' -ForegroundColor Green
 }catch{
     $failed=$true
