@@ -16,7 +16,7 @@ $script:Status = [ordered]@{
     schema_version = 1
     checked_at = (Get-Date).ToString('o')
     ollama = [ordered]@{ status = 'pending'; tag = ''; source = ''; store = ''; size_bytes = 0 }
-    whisper = [ordered]@{ status = 'pending'; model = 'small'; path = ''; cache_dir = '' }
+    whisper = [ordered]@{ status = 'pending'; model = 'base'; path = ''; cache_dir = '' }
     warnings = @()
     error = ''
 }
@@ -31,7 +31,7 @@ function Save-ModelStatus {
         "Qwen: $($script:Status.ollama.status)"
         "Qwen tag: $($script:Status.ollama.tag)"
         "Ollama store: $($script:Status.ollama.store)"
-        "Whisper Small: $($script:Status.whisper.status)"
+        "Whisper Base: $($script:Status.whisper.status)"
         "Whisper path: $($script:Status.whisper.path)"
         "Warnings: $(@($script:Warnings).Count)"
     ) | Set-Content -LiteralPath (Join-Path $Platform 'MODEL-STATUS.txt') -Encoding UTF8
@@ -389,7 +389,7 @@ for cache in candidates:
         if key in seen:
             continue
         seen.add(key)
-        snapshot = Path(download_model("small", cache_dir=str(cache), local_files_only=True))
+        snapshot = Path(download_model("base", cache_dir=str(cache), local_files_only=True))
         if not complete(snapshot):
             continue
         target.mkdir(parents=True, exist_ok=True)
@@ -406,8 +406,8 @@ for cache in candidates:
 
 try:
     target.mkdir(parents=True, exist_ok=True)
-    print("Downloading multilingual Whisper Small to " + str(target), flush=True)
-    result = Path(download_model("small", output_dir=str(target), local_files_only=False))
+    print("Downloading multilingual Whisper Base to " + str(target), flush=True)
+    result = Path(download_model("base", output_dir=str(target), local_files_only=False))
     if not complete(result):
         raise RuntimeError("download completed but required model files or config are incomplete")
     print("WHISPER_READY=" + str(result.resolve()))
@@ -417,7 +417,7 @@ except Exception as exc:
     sys.exit(10)
 '@
 
-    Write-Host '[MODEL] Searching local Whisper Small caches before any download...' -ForegroundColor Cyan
+    Write-Host '[MODEL] Searching local Whisper Base caches before any download...' -ForegroundColor Cyan
     $previousPreference = $ErrorActionPreference
     try {
         $ErrorActionPreference = 'Continue'
@@ -431,11 +431,11 @@ except Exception as exc:
         $script:Status.whisper.status = 'ready'
         $script:Status.whisper.path = $matches[1].Trim()
         $script:Status.whisper.cache_dir = $modelDir
-        Write-Host "[OK] Whisper Small is ready: $($script:Status.whisper.path)" -ForegroundColor Green
+        Write-Host "[OK] Whisper Base is ready: $($script:Status.whisper.path)" -ForegroundColor Green
         return
     }
 
-    $warning = 'Whisper Small is not ready: ' + $combined
+    $warning = 'Whisper Base is not ready: ' + $combined
     $script:Status.whisper.status = 'warning_missing_or_download_failed'
     $script:Status.whisper.cache_dir = $modelDir
     $script:Warnings.Add($warning)
@@ -457,7 +457,7 @@ try {
     $apiVersion = Invoke-RestMethod -Uri ($BaseUrl + '/api/version') -TimeoutSec 8 -ErrorAction Stop
     $script:OllamaExe = Get-OllamaExe
     $script:Status.ollama.store = Get-ActiveModelStore
-    Write-Host "Ollama $($apiVersion.version) is online. Checking Qwen 3.5 9B and Whisper Small." -ForegroundColor Cyan
+    Write-Host "Ollama $($apiVersion.version) is online. Checking Qwen 3.5 9B and Whisper Base." -ForegroundColor Cyan
 
     Ensure-QwenModel
     Ensure-WhisperModel

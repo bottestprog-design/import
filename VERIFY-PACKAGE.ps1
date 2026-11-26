@@ -136,7 +136,7 @@ if (-not (Test-Path -LiteralPath $launcherPath -PathType Leaf)) {
             $modelConfig = Get-Content -LiteralPath $modelsPath -Raw -Encoding UTF8 | ConvertFrom-Json
             if ([int]$modelConfig.schema_version -ne 1 -or
                 [string]$modelConfig.ollama.official_pull_tag -ne 'qwen3.5:9b-q4_K_M' -or
-                [string]$modelConfig.whisper.model_size -ne 'small' -or
+                [string]$modelConfig.whisper.model_size -ne 'base' -or
                 [string]::IsNullOrWhiteSpace([string]$modelConfig.ollama.preferred_tag) -or
                 [string]::IsNullOrWhiteSpace([string]$modelConfig.ollama.official_pull_tag) -or
                 [string]::IsNullOrWhiteSpace([string]$modelConfig.whisper.model_size) -or

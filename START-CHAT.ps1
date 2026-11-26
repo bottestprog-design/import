@@ -121,7 +121,7 @@ try{
         }else{Write-Host 'FFmpeg path record is stale; text chat still works.' -ForegroundColor Yellow}
     }
     $env:OMP_NUM_THREADS='3';$env:MKL_NUM_THREADS='3';$env:TOKENIZERS_PARALLELISM='false'
-    $env:WHISPER_MODEL='small';$env:WHISPER_MODEL_DIR=Join-Path $Data 'cache\whisper\models'
+    $env:WHISPER_MODEL='base';$env:WHISPER_MODEL_DIR=Join-Path $Data 'cache\whisper\models'
     $env:HF_HOME=Join-Path $Data 'cache\huggingface';$env:HUGGINGFACE_HUB_CACHE=Join-Path $env:HF_HOME 'hub'
     $env:WHISPER_COMPUTE_TYPE='int8';$env:WHISPER_MULTILINGUAL='true';$env:WHISPER_VAD_FILTER='true'
     $env:WHISPER_LANGUAGE='';$env:AUDIO_STT_ENGINE='';$env:AUDIO_TTS_ENGINE=''

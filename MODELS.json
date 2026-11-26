@@ -17,8 +17,8 @@
     ]
   },
   "whisper": {
-    "model_size": "small",
-    "repository": "Systran/faster-whisper-small",
+    "model_size": "base",
+    "repository": "Systran/faster-whisper-base",
     "auto_download_when_missing": true,
     "required_for_text_chat": false,
     "cache_relative_path": "Data\\cache\\whisper\\models",
