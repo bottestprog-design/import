@@ -61,7 +61,17 @@ foreach ($line in $manifestLines) {
         continue
     }
 
-    $actual = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+    # Git may check out text files with CRLF on Windows although the repository
+    # stores LF. Hash canonical UTF-8 text to make verification independent of EOLs.
+    $text = [IO.File]::ReadAllText($path, [Text.Encoding]::UTF8)
+    $text = $text.Replace("`r`n", "`n").Replace("`r", "`n")
+    $utf8 = New-Object System.Text.UTF8Encoding($false)
+    $sha = [Security.Cryptography.SHA256]::Create()
+    try {
+        $actual = ([BitConverter]::ToString($sha.ComputeHash($utf8.GetBytes($text)))).Replace('-', '').ToLowerInvariant()
+    } finally {
+        $sha.Dispose()
+    }
     if ($actual -ne $expected) {
         Write-Host "HASH MISMATCH: $relative" -ForegroundColor Red
         $bad++
