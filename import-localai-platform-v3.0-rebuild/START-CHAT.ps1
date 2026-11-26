@@ -16,6 +16,37 @@ function Set-TempEnvironment {
     New-Item -ItemType Directory -Force -Path $TempRoot | Out-Null
     $env:TEMP=$TempRoot; $env:TMP=$TempRoot; $env:TMPDIR=$TempRoot
 }
+function Get-LocalAIListener {
+    try { return Get-NetTCPConnection -LocalPort 8080 -State Listen -ErrorAction Stop | Select-Object -First 1 }
+    catch { return $null }
+}
+function Test-LocalAIReadyEndpoint {
+    try { Invoke-RestMethod 'http://127.0.0.1:8080/ready' -TimeoutSec 3 -ErrorAction Stop | Out-Null; return $true }
+    catch { return $false }
+}
+function Assert-TrackedOpenWebUIProcess([int]$ListenerPid) {
+    if (-not (Test-Path -LiteralPath $PidFile -PathType Leaf)) {
+        throw 'Port 8080 responds as Open WebUI, but no LocalAI PID file exists. Refusing to adopt an untracked service.'
+    }
+    $rawPid = (Get-Content -LiteralPath $PidFile -Raw).Trim()
+    $trackedPid = 0
+    if (-not [int]::TryParse($rawPid, [ref]$trackedPid) -or $trackedPid -le 0) {
+        throw 'LocalAI PID file is invalid. Refusing to stop or adopt any process.'
+    }
+    if ($trackedPid -ne $ListenerPid) {
+        throw "Port 8080 is owned by PID $ListenerPid, but LocalAI tracks PID $trackedPid. Refusing to adopt another service."
+    }
+    $tracked = Get-CimInstance Win32_Process -Filter "ProcessId=$trackedPid" -ErrorAction SilentlyContinue
+    if (-not $tracked -or [string]::IsNullOrWhiteSpace([string]$tracked.ExecutablePath)) {
+        throw "Tracked LocalAI process $trackedPid could not be verified through Windows process information."
+    }
+    $actual = [IO.Path]::GetFullPath([string]$tracked.ExecutablePath)
+    $expected = [IO.Path]::GetFullPath($OpenWebUI)
+    if (-not $actual.Equals($expected, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "PID $trackedPid is not this project's Open WebUI executable. Actual path: $actual"
+    }
+    return $trackedPid
+}
 function Invoke-PythonText([string]$Code) {
     $scriptPath = Join-Path $TempRoot ('localai-python-' + [guid]::NewGuid().ToString('N') + '.py')
     [IO.File]::WriteAllText($scriptPath,$Code,[System.Text.UTF8Encoding]::new($false))
@@ -83,22 +114,59 @@ function Apply-LocalAITheme {
     }catch{Write-Host "Theme skipped; chat can still run: $($_.Exception.Message)" -ForegroundColor Yellow}
 }
 
+$startMutex = $null
+$ownsStartMutex = $false
 try{
     New-Item -ItemType Directory -Force -Path $Data,$Logs,$Platform|Out-Null
     Set-TempEnvironment
+    $startMutex = [System.Threading.Mutex]::new($false, 'Local\LocalAIStudio-Start')
+    try { $ownsStartMutex = $startMutex.WaitOne(0) }
+    catch [System.Threading.AbandonedMutexException] { $ownsStartMutex = $true }
+    if (-not $ownsStartMutex) { throw 'Another LocalAI Studio start request is already running. Wait for that start to finish.' }
+
+    $earlyListener = Get-LocalAIListener
+    if ($earlyListener) {
+        if (-not (Test-LocalAIReadyEndpoint)) {
+            throw "Port 8080 already has a listener (PID $($earlyListener.OwningProcess)) that is not ready. No second server was started."
+        }
+        [void](Assert-TrackedOpenWebUIProcess -ListenerPid ([int]$earlyListener.OwningProcess))
+        try { Start-Process 'http://127.0.0.1:8080' } catch { Write-Host 'LocalAI Studio is ready; open http://127.0.0.1:8080 manually if needed.' -ForegroundColor Yellow }
+        Write-Host 'LocalAI Studio is already running and its tracked process owns port 8080.' -ForegroundColor Green
+        exit 0
+    }
+    if (Test-Path -LiteralPath $PidFile -PathType Leaf) {
+        $staleRawPid = (Get-Content -LiteralPath $PidFile -Raw).Trim()
+        $stalePid = 0
+        if (-not [int]::TryParse($staleRawPid, [ref]$stalePid) -or $stalePid -le 0) { throw 'LocalAI PID file is invalid. Refusing to start another server.' }
+        $staleProcess = Get-CimInstance Win32_Process -Filter "ProcessId=$stalePid" -ErrorAction SilentlyContinue
+        if ($staleProcess) {
+            $staleExe = [string]$staleProcess.ExecutablePath
+            if (-not $staleExe -or -not [IO.Path]::GetFullPath($staleExe).Equals([IO.Path]::GetFullPath($OpenWebUI), [StringComparison]::OrdinalIgnoreCase)) {
+                throw "PID file points to a process that is not this project's Open WebUI. PID $stalePid was not touched."
+            }
+            throw "Tracked Open WebUI process $stalePid is still running but port 8080 is not listening. Inspect its logs before starting another copy."
+        }
+        Remove-Item -LiteralPath $PidFile -Force
+    }
     if(-not(Test-Path -LiteralPath $Python -PathType Leaf)){throw "Project Python missing: $Python. Run LocalAI-Studio.bat repair only if platform is not installed."}
     if(-not(Test-Path -LiteralPath $OpenWebUI -PathType Leaf)){throw "Open WebUI missing: $OpenWebUI. Run LocalAI-Studio.bat repair only if platform is not installed."}
     if(-not(Test-Path -LiteralPath $SecretPath -PathType Leaf)){throw "Persistent WebUI secret missing: $SecretPath. Do not delete Data; run LocalAI-Studio.bat repair."}
     try{Invoke-RestMethod 'http://127.0.0.1:11434/api/version' -TimeoutSec 8|Out-Null}
     catch{throw 'Ollama is not running. Open Ollama, wait for its local API, then double-click LocalAI-Studio.bat.'}
-    $modelManager=Join-Path $PSScriptRoot 'ENSURE-MODELS.ps1'
-    if(-not(Test-Path -LiteralPath $modelManager -PathType Leaf)){throw "Model manager missing: $modelManager. Run LocalAI-Studio.bat repair."}
-    $managerOutput=@(& (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') -NoLogo -NoProfile -ExecutionPolicy Bypass -File $modelManager 2>&1)
-    if($LASTEXITCODE -ne 0){throw "Model verification failed. Review D:\LocalAI\Platform\MODEL-STATUS.txt. $($managerOutput -join ' ')"}
     $tags=Invoke-RestMethod 'http://127.0.0.1:11434/api/tags' -TimeoutSec 15
     $model=$tags.models|Where-Object{$_.name -eq 'local-qwen35:latest' -or $_.name -like 'local-qwen35*'}|Select-Object -First 1
     if(-not $model){$model=$tags.models|Where-Object{$_.name -like 'qwen3.5:9b-q4_K_M*'}|Select-Object -First 1}
-    if(-not $model){throw 'Qwen 3.5 9B is still missing after the model manager completed. Review MODEL-STATUS.txt.'}
+    if(-not $model){
+        $modelManager=Join-Path $PSScriptRoot 'ENSURE-MODELS.ps1'
+        if(-not(Test-Path -LiteralPath $modelManager -PathType Leaf)){throw "Model manager missing: $modelManager. Run LocalAI-Studio.bat repair."}
+        $managerOutput=@(& (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') -NoLogo -NoProfile -ExecutionPolicy Bypass -File $modelManager 2>&1)
+        $managerExit=[int]$LASTEXITCODE
+        if($managerExit -ne 0){throw "Model verification failed with exit code $managerExit. Review D:\LocalAI\Platform\MODEL-STATUS.txt. $($managerOutput -join ' ')"}
+        $tags=Invoke-RestMethod 'http://127.0.0.1:11434/api/tags' -TimeoutSec 15
+        $model=$tags.models|Where-Object{$_.name -eq 'local-qwen35:latest' -or $_.name -like 'local-qwen35*'}|Select-Object -First 1
+        if(-not $model){$model=$tags.models|Where-Object{$_.name -like 'qwen3.5:9b-q4_K_M*'}|Select-Object -First 1}
+    }
+    if(-not $model){throw 'Qwen 3.5 9B is not registered in the running Ollama API. Run LocalAI-Studio.bat repair to verify or restore its local manifest.'}
     $ModelId=[string]$model.name
 
     $env:DATA_DIR=$Data
@@ -157,14 +225,6 @@ try{
     New-Item -ItemType Directory -Force -Path $env:WHISPER_MODEL_DIR,$env:HF_HOME,$env:HUGGINGFACE_HUB_CACHE|Out-Null
 
     Repair-OpenWebUIWindowsTempPath
-    $alreadyReady=$false
-    try { Invoke-RestMethod 'http://127.0.0.1:8080/ready' -TimeoutSec 3|Out-Null; $alreadyReady=$true } catch {}
-    if($alreadyReady){
-        Apply-LocalAITheme
-        try { Start-Process 'http://127.0.0.1:8080' } catch { Write-Host 'Open WebUI is ready; open http://127.0.0.1:8080 manually if the browser did not open.' -ForegroundColor Yellow }
-        Write-Host 'LocalAI Studio is already running and ready.' -ForegroundColor Green
-        exit 0
-    }
     $listener=Get-NetTCPConnection -LocalPort 8080 -State Listen -ErrorAction SilentlyContinue|Select-Object -First 1
     if($listener){throw 'Port 8080 is occupied by a process that is not a ready Open WebUI instance. No process was stopped.'}
 
@@ -201,4 +261,7 @@ try{
 }catch{
     Write-Host ([Environment]::NewLine+"LOCALAI START FAILED: $($_.Exception.Message)") -ForegroundColor Red
     exit 1
+}finally{
+    if($ownsStartMutex -and $startMutex){try{$startMutex.ReleaseMutex()}catch{}}
+    if($startMutex){$startMutex.Dispose()}
 }

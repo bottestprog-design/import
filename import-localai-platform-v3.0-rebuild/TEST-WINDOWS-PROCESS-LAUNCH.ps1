@@ -13,17 +13,21 @@ $markerPath = Join-Path $root 'launch result marker.txt'
 $child = @'
 param(
     [Parameter(Mandatory=$true)][string]$ExpectedPath,
-    [Parameter(Mandatory=$true)][string]$MarkerPath
+    [Parameter(Mandatory=$true)][string]$ExpectedSpecialBase64,
+    [Parameter(Mandatory=$true)][string]$MarkerPath,
+    [Parameter(Mandatory=$true)][string]$SpecialArgument
 )
-if (-not (Test-Path -LiteralPath $ExpectedPath -PathType Leaf)) {
-    throw "Child received a corrupted path: $ExpectedPath"
-}
-[IO.File]::WriteAllText($MarkerPath, [IO.Path]::GetFullPath($ExpectedPath))
-Write-Output 'PROCESS_PATH_ARGUMENTS_OK'
+if (-not (Test-Path -LiteralPath $ExpectedPath -PathType Leaf)) { throw "Child received a corrupted path: $ExpectedPath" }
+$actualSpecialBase64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($SpecialArgument))
+if ($actualSpecialBase64 -cne $ExpectedSpecialBase64) { throw "Child received a corrupted quoted argument: $actualSpecialBase64" }
+[IO.File]::WriteAllText($MarkerPath, [IO.Path]::GetFullPath($ExpectedPath) + [Environment]::NewLine + $actualSpecialBase64)
+Write-Output 'PROCESS_PATH_AND_QUOTED_ARGUMENTS_OK'
 exit 0
 '@
 [IO.File]::WriteAllText($childScript, $child, [System.Text.UTF8Encoding]::new($false))
 [IO.File]::WriteAllText($expectedPath, 'argument sentinel', [System.Text.UTF8Encoding]::new($false))
+$specialArgument = 'quoted "value" with trailing' + [char]92
+$specialBase64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($specialArgument))
 
 try {
     # Load the same capture helper used by the repair script and prove that a child
@@ -58,18 +62,23 @@ try {
 
     # This matches the corrected REPAIR-AND-RESUME.ps1 call pattern:
     # invoke powershell.exe directly so the script path remains one argument.
-    & $powerShellExe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $childScript $expectedPath $markerPath
+    & $powerShellExe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $childScript $expectedPath $specialBase64 $markerPath $specialArgument
     $exitCode = [int]$LASTEXITCODE
-    if ($exitCode -ne 0) {
-        throw "PowerShell child exited with code $exitCode when paths contained spaces."
+    if ($exitCode -ne 0) { throw "PowerShell child exited with code $exitCode when paths contained spaces or embedded quotes." }
+    if (-not (Test-Path -LiteralPath $markerPath -PathType Leaf)) { throw 'The child process did not create its marker; an argument was lost.' }
+    $actualLines = [IO.File]::ReadAllLines($markerPath)
+    if ($actualLines.Count -lt 2 -or [IO.Path]::GetFullPath($actualLines[0]) -ne [IO.Path]::GetFullPath($expectedPath) -or $actualLines[1] -cne $specialBase64) {
+        throw "Path or special argument mismatch. Expected '$expectedPath' and '$specialBase64'; received '$($actualLines -join '|')'."
     }
-    if (-not (Test-Path -LiteralPath $markerPath -PathType Leaf)) {
-        throw 'The child process did not create its marker; an argument was lost.'
+    $quoteProbe = Invoke-CapturedProcess -Executable $powerShellExe -Arguments @(
+        '-NoLogo','-NoProfile','-ExecutionPolicy','Bypass','-File',$childScript,
+        $expectedPath,$specialBase64,$markerPath,$specialArgument
+    ) -TimeoutSeconds 20
+    if ($quoteProbe.ExitCode -ne 0 -or $quoteProbe.StdOut -notmatch 'PROCESS_PATH_AND_QUOTED_ARGUMENTS_OK') {
+        throw "Captured-process quoting regression failed: exit=$($quoteProbe.ExitCode); stdout=$($quoteProbe.StdOut); stderr=$($quoteProbe.StdErr)"
     }
-    $actual = [IO.File]::ReadAllText($markerPath)
-    if ([IO.Path]::GetFullPath($actual) -ne [IO.Path]::GetFullPath($expectedPath)) {
-        throw "Path argument mismatch. Expected '$expectedPath'; received '$actual'."
-    }
+    $actualLines = [IO.File]::ReadAllLines($markerPath)
+    if ($actualLines.Count -lt 2 -or $actualLines[1] -cne $specialBase64) { throw 'Captured-process quoting did not preserve an embedded quote and trailing backslash.' }
 
     $repairSource = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'REPAIR-AND-RESUME.ps1'))
     if ($repairSource -match '(?is)Start-Process\s+-FilePath.*?powershell\.exe.*?-File\s*,?\s*\$modelManager') {
@@ -85,7 +94,7 @@ try {
         throw 'The repair script still merges native Python stderr into a terminating PowerShell pipeline.'
     }
 
-    Write-Host '[PASS] Windows PowerShell 5.1 preserved .ps1 and argument paths containing spaces.' -ForegroundColor Green
+    Write-Host '[PASS] Windows PowerShell 5.1 preserved paths, spaces, embedded quotes and trailing backslashes.' -ForegroundColor Green
     Write-Host '[PASS] Native stderr is captured safely under ErrorActionPreference=Stop.' -ForegroundColor Green
     Write-Host '[PASS] REPAIR-AND-RESUME.ps1 uses the validated invocation patterns.' -ForegroundColor Green
 }

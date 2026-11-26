@@ -12,7 +12,27 @@ $script:LogState = @{}
 
 function Quote-ProcessArgument([string]$Value) {
     if ($null -eq $Value) { return '""' }
-    return '"' + $Value.Replace('"','\"') + '"'
+    if ($Value.Length -gt 0 -and $Value -notmatch '[\s"]') { return $Value }
+    $slash = [string][char]92
+    $quote = [char]34
+    $builder = [System.Text.StringBuilder]::new()
+    [void]$builder.Append($quote)
+    $backslashes = 0
+    foreach ($character in $Value.ToCharArray()) {
+        if ([int]$character -eq 92) { $backslashes++; continue }
+        if ($character -eq $quote) {
+            if ($backslashes -gt 0) { [void]$builder.Append(($slash * (2 * $backslashes))) }
+            [void]$builder.Append($slash)
+            [void]$builder.Append($quote)
+            $backslashes = 0
+            continue
+        }
+        if ($backslashes -gt 0) { [void]$builder.Append(($slash * $backslashes)); $backslashes = 0 }
+        [void]$builder.Append($character)
+    }
+    if ($backslashes -gt 0) { [void]$builder.Append(($slash * (2 * $backslashes))) }
+    [void]$builder.Append($quote)
+    return $builder.ToString()
 }
 function Invoke-CapturedProcess([string]$Executable,[string[]]$Arguments,[int]$TimeoutSeconds=45) {
     $id=[guid]::NewGuid().ToString('N')
@@ -24,8 +44,13 @@ function Invoke-CapturedProcess([string]$Executable,[string[]]$Arguments,[int]$T
     try {
         $proc=Start-Process -FilePath $Executable -ArgumentList $line -PassThru -WindowStyle Hidden -RedirectStandardOutput $stdout -RedirectStandardError $stderr -ErrorAction Stop
         if (-not $proc.WaitForExit($TimeoutSeconds*1000)) {
-            try { $proc.Kill() } catch {}
-            return [pscustomobject]@{ExitCode=124;StdOut='';StdErr='Probe timed out';TimedOut=$true}
+            try { $proc.Kill(); [void]$proc.WaitForExit(5000) } catch {}
+            $timeoutOut=if(Test-Path $stdout){[IO.File]::ReadAllText($stdout)}else{''}
+            $timeoutErr=if(Test-Path $stderr){[IO.File]::ReadAllText($stderr)}else{''}
+            $timeoutMessage="Probe timed out after $TimeoutSeconds seconds."
+            if(-not [string]::IsNullOrWhiteSpace($timeoutErr)){$timeoutErr += [Environment]::NewLine}
+            $timeoutErr += $timeoutMessage
+            return [pscustomobject]@{ExitCode=124;StdOut=$timeoutOut;StdErr=$timeoutErr;TimedOut=$true}
         }
         $proc.Refresh()
         $out=if(Test-Path $stdout){[IO.File]::ReadAllText($stdout)}else{''}
@@ -99,13 +124,18 @@ function Show-ChangedLog([string]$Path) {
     Write-Host "`n--- $($item.Name) | $($item.Length) bytes | $($item.LastWriteTime) ---" -ForegroundColor Cyan
     Get-Content -LiteralPath $Path -Tail 14 -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_ }
 }
-function Watch-Installer {
+function Watch-Installer([int]$MaximumWaitMinutes=120) {
+    $deadline = (Get-Date).AddMinutes($MaximumWaitMinutes)
     Write-Host 'An existing platform installer or Open WebUI pip installation is active. Monitoring; no second installer will be started.' -ForegroundColor Yellow
     while ($true) {
         $active=@(Get-ActiveInstallProcesses)
         $recent=@(Get-ChildItem -LiteralPath $Logs -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '\.(stdout|stderr)\.log$' } | Sort-Object LastWriteTime -Descending | Select-Object -First 4)
         foreach($f in $recent){ Show-ChangedLog -Path $f.FullName }
         if ($active.Count -eq 0) { break }
+        if ((Get-Date) -ge $deadline) {
+            $pids=($active | ForEach-Object { $_.ProcessId }) -join ', '
+            throw "Waited $MaximumWaitMinutes minutes for the existing installer process(es) $pids. They were not terminated. Inspect D:\LocalAI\Logs and rerun repair after they finish."
+        }
         $pids=($active | ForEach-Object { $_.ProcessId }) -join ', '
         if (-not $script:LastWaitNotice -or ((Get-Date)-$script:LastWaitNotice).TotalSeconds -ge 180) {
             Write-Host "Installer-related processes still active: PID $pids. Waiting; nothing will be terminated." -ForegroundColor Yellow
@@ -177,12 +207,12 @@ if ($state.Installed -and $state.AudioReady) {
     if ($launchTestExit -ne 0) { throw "Windows process path regression test failed with exit code $launchTestExit." }
     $modelManager = Join-Path $PSScriptRoot 'ENSURE-MODELS.ps1'
     if (-not (Test-Path -LiteralPath $modelManager -PathType Leaf)) { throw 'ENSURE-MODELS.ps1 is missing from the package.' }
-    Write-Host 'Checking Qwen and provisioning the Whisper cache with Windows PowerShell 5.1...' -ForegroundColor Cyan
+    Write-Host 'Checking Qwen and optional Whisper setup with Windows PowerShell 5.1...' -ForegroundColor Cyan
     & $PowerShellExe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $modelManager
     $modelExitCode = [int]$LASTEXITCODE
     if ($modelExitCode -ne 0) { throw "Qwen/Whisper model verification failed (exit $modelExitCode). See D:\LocalAI\Platform\MODEL-STATUS.txt." }
     $modelStatus = Get-Content -LiteralPath (Join-Path $Platform 'MODEL-STATUS.json') -Raw -Encoding UTF8 | ConvertFrom-Json
-    if ($modelStatus.whisper.status -ne 'ready') { Write-Host "Qwen is ready; Whisper $($modelStatus.whisper.model) needs a network retry. See MODEL-STATUS.txt." -ForegroundColor Yellow }
+    if ($modelStatus.whisper.status -eq 'not_requested') { Write-Host 'Whisper was skipped intentionally; text chat is ready. Run ENSURE-MODELS.ps1 -RequireWhisper when audio is needed.' -ForegroundColor DarkGray } elseif ($modelStatus.whisper.status -ne 'ready') { Write-Host "Qwen is ready; Whisper $($modelStatus.whisper.model) needs a network retry. See MODEL-STATUS.txt." -ForegroundColor Yellow }
     Write-Host 'Updated LocalAI Studio files and checked the configured models. Existing Ollama and WebUI data were reused.' -ForegroundColor Green
     exit 0
 }

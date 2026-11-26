@@ -329,12 +329,16 @@ try {
     $launchRegression = Invoke-NativeLogged -Executable (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') -Arguments @('-NoLogo','-NoProfile','-ExecutionPolicy','Bypass','-File',(Join-Path $Platform 'TEST-WINDOWS-PROCESS-LAUNCH.ps1')) -Label 'Test Windows paths containing spaces'
     if ($launchRegression.ExitCode -ne 0) { throw 'Windows process path regression test failed. See the launch-test child log.' }
     $modelManager = Join-Path $Platform 'ENSURE-MODELS.ps1'
-    $modelCheck = Invoke-NativeLogged -Executable (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') -Arguments @('-NoLogo','-NoProfile','-ExecutionPolicy','Bypass','-File',$modelManager) -Label 'Find, verify and provision Qwen and Whisper models' -NoticeSeconds 180
+    $modelCheck = Invoke-NativeLogged -Executable (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') -Arguments @('-NoLogo','-NoProfile','-ExecutionPolicy','Bypass','-File',$modelManager) -Label 'Find and verify Qwen; provision Whisper only when explicitly required' -NoticeSeconds 180
     if ($modelCheck.ExitCode -ne 0) { throw 'Required Qwen model could not be prepared. See the model manager report in D:\LocalAI\Platform.' }
     $engineStatus = Get-Content -LiteralPath (Join-Path $Platform 'MODEL-STATUS.json') -Raw -Encoding UTF8 | ConvertFrom-Json
     $ModelId = [string]$engineStatus.ollama.tag
     if (-not $ModelId) { throw 'Model manager returned success without a Qwen model tag.' }
-    if ($engineStatus.whisper.status -ne 'ready') { $null = $Warnings.Add('Whisper $($engineStatus.whisper.model) is not ready; text chat remains available. Review MODEL-STATUS.txt.') }
+    if ($engineStatus.whisper.status -eq 'not_requested') {
+        Write-Host '[INFO] Whisper model setup was skipped because it is optional for text chat. Run ENSURE-MODELS.ps1 -RequireWhisper to prepare audio.' -ForegroundColor DarkGray
+    } elseif ($engineStatus.whisper.status -ne 'ready') {
+        $null = $Warnings.Add("Whisper $($engineStatus.whisper.model) is not ready; text chat remains available. Review MODEL-STATUS.txt.")
+    }
     $status = if ($Warnings.Count -gt 0) { 'SUCCESS_WITH_WARNINGS' } else { 'SUCCESS' }
     $warningText = if ($Warnings.Count -gt 0) { $Warnings -join "`r`n- " } else { 'None' }
     @"
@@ -347,7 +351,7 @@ Platform: $Platform
 Data: $Data
 Open WebUI executable: $OpenWebUIExe
 FFmpeg: $FfmpegExe
-Whisper: $($engineStatus.whisper.model) / multilingual / CPU INT8 / model path $($engineStatus.whisper.path)
+Whisper status: $($engineStatus.whisper.status); model path: $($engineStatus.whisper.path)
 Filter sources copied: 3; syntax and behavior tests passed
 Web search: ENABLE_WEB_SEARCH=true; WEB_SEARCH_ENGINE=duckduckgo; DDGS_BACKEND=auto
 Network scope: localhost only (127.0.0.1:8080)

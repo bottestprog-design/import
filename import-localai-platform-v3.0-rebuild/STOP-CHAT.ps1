@@ -12,6 +12,22 @@ $actual = [string]$proc.ExecutablePath
 if (-not $actual -or [IO.Path]::GetFullPath($actual) -ne [IO.Path]::GetFullPath($ExpectedExe)) {
     throw "PID $targetPid is not the expected Open WebUI executable. Refusing to stop it. Actual path: $actual"
 }
-Stop-Process -Id $targetPid -Force
-Remove-Item $PidFile -Force
-Write-Host 'Only the tracked Open WebUI process was stopped. Ollama and model files were not touched.' -ForegroundColor Green
+$managedProcess = Get-Process -Id $targetPid -ErrorAction Stop
+$gracefulRequested = $false
+try { $gracefulRequested = $managedProcess.CloseMainWindow() } catch {}
+if ($gracefulRequested -and -not $managedProcess.WaitForExit(15000)) {
+    Write-Host 'Open WebUI did not close its main window within 15 seconds; applying the tracked-process fallback.' -ForegroundColor Yellow
+}
+$managedProcess.Refresh()
+if (-not $managedProcess.HasExited) {
+    Stop-Process -Id $targetPid -Force
+    try { [void]$managedProcess.WaitForExit(5000) } catch {}
+}
+$remaining = Get-CimInstance Win32_Process -Filter "ProcessId=$targetPid" -ErrorAction SilentlyContinue
+if ($remaining) { throw "Open WebUI PID $targetPid is still running. PID file was kept for a safe retry." }
+Remove-Item -LiteralPath $PidFile -Force
+if ($gracefulRequested) {
+    Write-Host 'Requested a window-close shutdown and verified the tracked process exited. Ollama and model files were not touched.' -ForegroundColor Green
+} else {
+    Write-Host 'No closeable main window was exposed; stopped only the verified tracked Open WebUI process. Ollama and model files were not touched.' -ForegroundColor Green
+}

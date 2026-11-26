@@ -415,10 +415,16 @@ try {
     $apiVersion = Invoke-RestMethod -Uri ($BaseUrl + '/api/version') -TimeoutSec 8 -ErrorAction Stop
     $script:OllamaExe = Get-OllamaExe
     $script:Status.ollama.store = Get-ActiveModelStore
-    Write-Host "Ollama $($apiVersion.version) is online. Checking Qwen and Whisper $($script:Config.whisper.model_size)." -ForegroundColor Cyan
+    Write-Host "Ollama $($apiVersion.version) is online. Checking the required Qwen chat model." -ForegroundColor Cyan
 
     Ensure-QwenModel
-    Ensure-WhisperModel
+    if ($RequireWhisper -or [bool]$script:Config.whisper.required_for_text_chat) {
+        Ensure-WhisperModel
+    } else {
+        $script:Status.whisper.status = 'not_requested'
+        $script:Status.whisper.source = 'Skipped because Whisper is optional for text chat. Run ENSURE-MODELS.ps1 -RequireWhisper to prepare audio transcription.'
+        Write-Host '[INFO] Whisper setup skipped; it is not needed for text chat. Use -RequireWhisper when audio is required.' -ForegroundColor DarkGray
+    }
     Save-ModelStatus
 
     Write-Host "Model report: $StatusPath" -ForegroundColor Cyan
