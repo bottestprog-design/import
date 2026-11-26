@@ -157,6 +157,8 @@ if ($state.Installed -and $state.AudioReady) {
         New-Item -ItemType Directory -Force -Path $targetFilters | Out-Null
         Copy-Item -Path (Join-Path $sourceFilters '*.py') -Destination $targetFilters -Force
     }
+    $modelUnitTest = Start-Process -FilePath $VenvPython -ArgumentList @((Join-Path $Platform 'TEST-MODEL-MANAGER.py')) -Wait -PassThru -NoNewWindow
+    if ($modelUnitTest.ExitCode -ne 0) { throw 'Whisper model-manager tests failed. See the repair log.' }
     $modelManager = Join-Path $PSScriptRoot 'ENSURE-MODELS.ps1'
     if (-not (Test-Path -LiteralPath $modelManager -PathType Leaf)) { throw 'ENSURE-MODELS.ps1 is missing from the package.' }
     $modelProcess = Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') -ArgumentList @('-NoLogo','-NoProfile','-ExecutionPolicy','Bypass','-File',$modelManager) -Wait -PassThru -NoNewWindow

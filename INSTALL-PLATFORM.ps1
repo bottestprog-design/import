@@ -324,6 +324,8 @@ try {
 
     $filterTest = Invoke-NativeLogged -Executable $VenvPython -Arguments @((Join-Path $Platform 'TEST-FILTERS.py'),'--filters-dir',$FilterDir) -Label 'Run filter syntax and behavior tests'
     if ($filterTest.ExitCode -ne 0 -or $filterTest.StdOut -notmatch 'FILTER_TESTS: SUCCESS') { throw 'Filter tests did not pass. See the filter-test child log.' }
+    $modelUnitTest = Invoke-NativeLogged -Executable $VenvPython -Arguments @((Join-Path $Platform 'TEST-MODEL-MANAGER.py')) -Label 'Run offline Whisper model-manager tests'
+    if ($modelUnitTest.ExitCode -ne 0) { throw 'Whisper model-manager tests failed. See the model-manager test child log.' }
     $modelManager = Join-Path $Platform 'ENSURE-MODELS.ps1'
     $modelCheck = Invoke-NativeLogged -Executable (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') -Arguments @('-NoLogo','-NoProfile','-ExecutionPolicy','Bypass','-File',$modelManager) -Label 'Find, verify and provision Qwen and Whisper models' -NoticeSeconds 180
     if ($modelCheck.ExitCode -ne 0) { throw 'Required Qwen model could not be prepared. See the model manager report in D:\LocalAI\Platform.' }

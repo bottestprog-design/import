@@ -24,7 +24,7 @@ def create_valid_model(folder: Path) -> Path:
         "suppress_ids_begin": [220, 50257],
         "alignment_heads": [[3, 1]],
     }
-    (folder / "config.json").write_text(json.dumps(config), encoding="utf-8")
+    (folder / "config.json").write_text(json.dumps(config) + (" " * 500), encoding="utf-8")
     tokenizer = {"model": {"type": "BPE", "vocab": {}, "merges": []}}
     (folder / "tokenizer.json").write_text(
         json.dumps(tokenizer) + (" " * 1_000_000), encoding="utf-8"
@@ -47,7 +47,7 @@ class WhisperManagerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             folder = create_valid_model(Path(temp) / "model")
             (folder / "config.json").write_text(
-                json.dumps({"model_type": "whisper", "num_mel_bins": 80}),
+                json.dumps({"model_type": "whisper", "num_mel_bins": 80}) + (" " * 500),
                 encoding="utf-8",
             )
             valid, detail = HELPER.validate_model_directory(folder)
