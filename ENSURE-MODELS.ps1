@@ -78,6 +78,12 @@ function Get-ActiveModelStore {
         [Environment]::GetEnvironmentVariable('OLLAMA_MODELS','Machine')
     ) | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Select-Object -First 1
     if ($configured) { return [IO.Path]::GetFullPath([string]$configured) }
+    # The user's existing Ollama store was established as D:\LocalAI\Models.
+    # Prefer it when it contains manifests, rather than importing into a new empty default folder.
+    $knownStore = Join-Path $Root 'Models'
+    if (Test-Path -LiteralPath (Join-Path $knownStore 'manifests') -PathType Container) {
+        return [IO.Path]::GetFullPath($knownStore)
+    }
     return Join-Path $env:USERPROFILE '.ollama\models'
 }
 
