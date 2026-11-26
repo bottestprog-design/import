@@ -328,7 +328,10 @@ try {
         $obsoletePath = Join-Path $Platform $obsoleteName
         if (Test-Path -LiteralPath $obsoletePath -PathType Leaf) { Remove-Item -LiteralPath $obsoletePath -Force }
     }
-    Copy-Item -Path (Join-Path $PSScriptRoot 'Filters\*.py') -Destination $FilterDir -Force
+    $sourceFilters = Join-Path $PSScriptRoot 'Filters'
+    if ([IO.Path]::GetFullPath($sourceFilters) -ne [IO.Path]::GetFullPath($FilterDir)) {
+        Copy-Item -Path (Join-Path $sourceFilters '*.py') -Destination $FilterDir -Force
+    }
     $runtimeFiles = @('LocalAI-Studio.bat','START-CHAT.ps1','STOP-CHAT.ps1','REPAIR-AND-RESUME.ps1',
         'INSTALL-PLATFORM.ps1','CHECK-LOCALAI.ps1','VERIFY-MODEL.ps1','VERIFY-PACKAGE.ps1',
         'IMPORT-FILTERS.ps1','RESTORE-OPENWEBUI-STYLE.ps1','LOCALAI-STUDIO-THEME.css',
@@ -336,7 +339,10 @@ try {
     foreach ($fileName in $runtimeFiles) {
         $sourceFile = Join-Path $PSScriptRoot $fileName
         if (-not (Test-Path -LiteralPath $sourceFile -PathType Leaf)) { throw "Required project file is missing: $fileName" }
-        Copy-Item -LiteralPath $sourceFile -Destination (Join-Path $Platform $fileName) -Force
+        $targetFile = Join-Path $Platform $fileName
+        if ([IO.Path]::GetFullPath($sourceFile) -ne [IO.Path]::GetFullPath($targetFile)) {
+            Copy-Item -LiteralPath $sourceFile -Destination $targetFile -Force
+        }
     }
 
     $filterTest = Invoke-NativeLogged -Executable $VenvPython -Arguments @((Join-Path $Platform 'TEST-FILTERS.py'),'--filters-dir',$FilterDir) -Label 'Run filter syntax and behavior tests'
