@@ -3,8 +3,8 @@ setlocal
 chcp 65001 >nul
 cd /d "%~dp0"
 echo ============================================================
-echo LOCAL AI - PLATFORM CONTINUATION REPAIR v2.2
-echo Fixes PowerShell 5.1 package-detection failure.
+echo LOCALAI STUDIO - PLATFORM REPAIR v2.3.1
+echo Uses a dedicated exit-code runner for Windows PowerShell 5.1.
 echo Watches an existing installer and never starts a duplicate.
 echo Does not reinstall Ollama or download Qwen.
 echo ============================================================
