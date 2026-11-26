@@ -27,3 +27,4 @@ D:\LocalAI\Platform\V2.3-ADDENDUM-AR.md
 D:\LocalAI\Platform\LOCALAI-STUDIO-THEME.css
 D:\LocalAI\Platform\RESTORE-OPENWEBUI-STYLE.ps1
 D:\LocalAI\Platform\RESTORE-OPENWEBUI-STYLE.bat
+D:\LocalAI\Platform\START-LOCALAI.bat

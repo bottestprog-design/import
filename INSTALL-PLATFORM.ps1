@@ -22,7 +22,10 @@ foreach ($manifestLine in $manifestLines) {
     if ($actualHash -ne $expectedHash) { throw "Package integrity mismatch: $relativePath. Extract the ZIP again." }
 }
 Write-Host "[OK] Package integrity verified ($(@($manifestLines).Count) files)." -ForegroundColor Green
-New-Item -ItemType Directory -Force -Path $Root,$Platform,$Data,$Logs,$FilterDir,$Cache,(Join-Path $Cache 'pip'),(Join-Path $Data 'cache\huggingface'),(Join-Path $Data 'cache\whisper\models'),(Join-Path $Platform 'Secrets') | Out-Null
+New-Item -ItemType Directory -Force -Path $Root,$Platform,$Data,$Logs,$FilterDir,$Cache,(Join-Path $Data 'Temp'),(Join-Path $Cache 'pip'),(Join-Path $Data 'cache\huggingface'),(Join-Path $Data 'cache\whisper\models'),(Join-Path $Platform 'Secrets') | Out-Null
+$env:TEMP = Join-Path $Data 'Temp'
+$env:TMP = $env:TEMP
+$env:TMPDIR = $env:TEMP
 $script:Logs = $Logs
 $LogFile = Join-Path $Logs ('platform-continuation-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '.log')
 Start-Transcript -Path $LogFile -Force | Out-Null
@@ -248,7 +251,14 @@ try {
 
     $null = Invoke-Python $VenvPython @('-m','pip','install','--upgrade','pip','setuptools','wheel','--retries','5','--timeout','180','--disable-pip-version-check') 'Upgrade pip build tools'
     $webuiPackage = 'open-webui==' + $RequiredWebUI
-    $null = Invoke-Python $VenvPython @('-m','pip','install','--progress-bar','on','--prefer-binary','--retries','5','--timeout','180','--disable-pip-version-check',$webuiPackage) "Install Open WebUI $RequiredWebUI"
+    $webUiProbeCode = 'import importlib.metadata as md; import open_webui; print("OPEN_WEBUI="+md.version("open-webui"))'
+    $webUiProbe = Invoke-NativeLogged -Executable $VenvPython -Arguments @('-c',$webUiProbeCode) -Label 'Check existing Open WebUI package'
+    $webUiReady = ($webUiProbe.ExitCode -eq 0 -and $webUiProbe.StdOut -match ('OPEN_WEBUI=' + [regex]::Escape($RequiredWebUI)) -and (Test-Path -LiteralPath (Join-Path $venv 'Scripts\open-webui.exe') -PathType Leaf))
+    if ($webUiReady) {
+        Write-Host "[OK] Open WebUI $RequiredWebUI is already installed; skipping the large reinstall." -ForegroundColor Green
+    } else {
+        $null = Invoke-Python $VenvPython @('-m','pip','install','--progress-bar','on','--prefer-binary','--retries','5','--timeout','180','--disable-pip-version-check',$webuiPackage) "Install Open WebUI $RequiredWebUI"
+    }
     # The official audio troubleshooting guide pins PyAV 14.0.1 for Local Whisper on pip installs.
     $null = Invoke-Python $VenvPython @('-m','pip','install','--retries','5','--timeout','180','--disable-pip-version-check','av==14.0.1','faster-whisper') 'Install compatible local audio dependencies'
     $null = Invoke-Python $VenvPython @('-m','pip','check') 'Check Python dependency consistency'
@@ -311,6 +321,7 @@ try {
     Copy-Item -Path (Join-Path $PSScriptRoot 'Filters\*.py') -Destination $FilterDir -Force
     Copy-Item (Join-Path $PSScriptRoot 'TEST-FILTERS.py') (Join-Path $Platform 'TEST-FILTERS.py') -Force
     Copy-Item (Join-Path $PSScriptRoot 'START-CHAT.bat') (Join-Path $Platform 'START-CHAT.bat') -Force
+    Copy-Item (Join-Path $PSScriptRoot 'START-LOCALAI.bat') (Join-Path $Platform 'START-LOCALAI.bat') -Force
     Copy-Item (Join-Path $PSScriptRoot 'START-CHAT.ps1') (Join-Path $Platform 'START-CHAT.ps1') -Force
     Copy-Item (Join-Path $PSScriptRoot 'STOP-CHAT.bat') (Join-Path $Platform 'STOP-CHAT.bat') -Force
     Copy-Item (Join-Path $PSScriptRoot 'STOP-CHAT.ps1') (Join-Path $Platform 'STOP-CHAT.ps1') -Force

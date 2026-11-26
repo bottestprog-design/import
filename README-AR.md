@@ -107,3 +107,13 @@
 
 ### تحسين المظهر v2.3.1
 يُحمّل ملف `LOCALAI-STUDIO-THEME.css` من نقطة `/static/custom.css` بعد جاهزية الخادم. يحفظ المشغّل النسخة الأصلية في `D:\LocalAI\Platform\Backups\OpenWebUI\custom.css.original`. للتراجع شغّل `RESTORE-OPENWEBUI-STYLE.bat` ثم أعد تشغيل Open WebUI. لا تتغير ملفات JavaScript أو الشعارات أو بيانات المحادثات.
+
+
+## إصدار v2.4 — إصلاح Windows وتشغيل بنقرة واحدة
+
+- أصل المشكلة: Open WebUI 0.13.5 يمرر المسار Unix الثابت /tmp إلى tempfile.mkdtemp في الملف utils/machines/managed.py. هذا المسار غير متاح افتراضيًا على Windows، فينهار الاستيراد قبل بدء الخادم.
+- يضبط المشغّل TEMP وTMP وTMPDIR على D:\LocalAI\Platform\Data\Temp، ويحفظ نسخة أصلية من ملف Open WebUI ثم يستبدل السطر المحدد ليستخدم tempfile.gettempdir().
+- الإصلاح قابل لإعادة التشغيل: إذا كان موجودًا لا يعدل الملف مرة أخرى ولا يعيد تنزيل Open WebUI أو Ollama أو Qwen.
+- بعد الإصلاح يعمل الخادم مخفيًا في الخلفية ويفتح المتصفح؛ لا تحتاج إلى إبقاء نافذة PowerShell مفتوحة.
+- استخدم START-LOCALAI.bat للتشغيل وSTOP-CHAT.bat للإيقاف. لا يوقف ذلك Ollama ولا يحذف النماذج.
+- أزيل تعيين القدرات العام vision/web_search لكل النماذج؛ تعتمد قدرات كل نموذج على بياناته الفعلية في Ollama.

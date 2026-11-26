@@ -1,1 +1,1 @@
-LocalAI Platform Continuation Enhanced v2.3.1
+LocalAI Platform Continuation v2.4.0 — Windows Temp Fix + One-Click Launcher

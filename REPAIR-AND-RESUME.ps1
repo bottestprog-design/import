@@ -2,6 +2,8 @@
 $Root = 'D:\LocalAI'
 $Platform = Join-Path $Root 'Platform'
 $Logs = Join-Path $Root 'Logs'
+$Data = Join-Path $Platform 'Data'
+$TempRoot = Join-Path $Data 'Temp'
 $VenvPython = Join-Path $Platform '.venv\Scripts\python.exe'
 $OpenWebUIExe = Join-Path $Platform '.venv\Scripts\open-webui.exe'
 $InstallerScript = Join-Path $PSScriptRoot 'INSTALL-PLATFORM.ps1'
@@ -116,7 +118,10 @@ function Watch-Installer {
 Write-Host 'LOCALAI PLATFORM REPAIR / RESUME v2.3' -ForegroundColor Cyan
 Write-Host 'PowerShell 5.1-safe package probing; no pip stderr is treated as a terminating error.'
 if (-not (Test-Path -LiteralPath $InstallerScript -PathType Leaf)) { throw 'INSTALL-PLATFORM.ps1 is missing from this extracted package.' }
-New-Item -ItemType Directory -Force -Path $Logs | Out-Null
+New-Item -ItemType Directory -Force -Path $Logs,$TempRoot | Out-Null
+$env:TEMP = $TempRoot
+$env:TMP = $TempRoot
+$env:TMPDIR = $TempRoot
 $active=@(Get-ActiveInstallProcesses)
 if ($active.Count -gt 0) { Watch-Installer }
 $state=Get-OpenWebUIState
@@ -124,13 +129,15 @@ Write-Host ('Open WebUI package state: Version={0}; CoreReady={1}; AudioReady={2
 if ($state.Installed -and $state.AudioReady) {
     Write-Host 'Open WebUI 0.13.5 and audio imports are already installed. No package reinstall is needed.' -ForegroundColor Green
     New-Item -ItemType Directory -Force -Path $Platform | Out-Null
-    foreach ($extraName in @('DASHBOARD-SERVER.py','TEST-DASHBOARD.py','START-DASHBOARD.bat','ADD-FAST-MODEL.ps1','ADD-FAST-MODEL.bat','MODEL-PROFILES-AR.md','V2.3-ADDENDUM-AR.md','LOCALAI-STUDIO-THEME.css','RESTORE-OPENWEBUI-STYLE.ps1','RESTORE-OPENWEBUI-STYLE.bat')) {
+    foreach ($extraName in @('DASHBOARD-SERVER.py','TEST-DASHBOARD.py','START-DASHBOARD.bat','ADD-FAST-MODEL.ps1','ADD-FAST-MODEL.bat','MODEL-PROFILES-AR.md','V2.3-ADDENDUM-AR.md','LOCALAI-STUDIO-THEME.css','RESTORE-OPENWEBUI-STYLE.ps1','RESTORE-OPENWEBUI-STYLE.bat','START-LOCALAI.bat')) {
         $extraSource = Join-Path $PSScriptRoot $extraName
         if (Test-Path -LiteralPath $extraSource -PathType Leaf) { Copy-Item -LiteralPath $extraSource -Destination $Platform -Force }
     }
     $sourceStart=Join-Path $PSScriptRoot 'START-CHAT.ps1'
     $targetStart=Join-Path $Platform 'START-CHAT.ps1'
     if (Test-Path $sourceStart) { Copy-Item -LiteralPath $sourceStart -Destination $targetStart -Force }
+    $sourceOneClick=Join-Path $PSScriptRoot 'START-LOCALAI.bat'
+    if (Test-Path $sourceOneClick) { Copy-Item -LiteralPath $sourceOneClick -Destination (Join-Path $Platform 'START-LOCALAI.bat') -Force }
     Write-Host 'Updated the installed chat launcher with the corrected Windows power-state flag.' -ForegroundColor Green
     exit 0
 }
