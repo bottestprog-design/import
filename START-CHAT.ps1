@@ -34,7 +34,7 @@ function Repair-OpenWebUIWindowsTempPath {
     if($source.Contains($old)){
         if(-not(Test-Path -LiteralPath $backup -PathType Leaf)){Copy-Item -LiteralPath $managed -Destination $backup -Force}
         $replacement="_RUN_TMP_ROOT = Path(tempfile.gettempdir())"+[Environment]::NewLine+"_RUN_TMP_ROOT.mkdir(parents=True, exist_ok=True)"+[Environment]::NewLine+$fixed
-        $encoding=New-Object System.Text.UTF8Encoding($false)
+        $encoding=[System.Text.UTF8Encoding]::new($false)
         [IO.File]::WriteAllText($managed,$source.Replace($old,$replacement),$encoding)
         Write-Host '[OK] Applied Open WebUI Windows temp-path fix.' -ForegroundColor Green
     }elseif($source.Contains($fixed)-and $source.Contains('tempfile.gettempdir()')){
