@@ -105,7 +105,7 @@ class WhisperManagerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             folder = Path(temp) / "partial"
             folder.mkdir()
-            (folder / "config.json").write_text('{"lang_ids":[]}', encoding="utf-8")
+            (folder / "config.json").write_text('{"lang_ids":[]}' + (" " * 500), encoding="utf-8")
             valid, detail = HELPER.validate_model_directory(folder)
             self.assertFalse(valid)
             self.assertIn("required file is missing", detail)
