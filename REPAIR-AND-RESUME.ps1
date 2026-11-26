@@ -158,10 +158,20 @@ if ($state.Installed -and $state.AudioReady) {
         New-Item -ItemType Directory -Force -Path $targetFilters | Out-Null
         Copy-Item -Path (Join-Path $sourceFilters '*.py') -Destination $targetFilters -Force
     }
-    $modelUnitTestOutput = @(& $VenvPython (Join-Path $Platform 'TEST-MODEL-MANAGER.py') 2>&1)
-    $modelUnitTestExit = [int]$LASTEXITCODE
-    $modelUnitTestOutput | ForEach-Object { Write-Host $_ }
-    if ($modelUnitTestExit -ne 0) { throw "Whisper model-manager tests failed with exit code $modelUnitTestExit. See the repair log." }
+    # unittest writes its progress to native stderr. Do not merge that stream into a
+    # PowerShell pipeline while ErrorActionPreference is Stop: PS 5.1 promotes it
+    # to NativeCommandError and aborts even when Python exits successfully.
+    $modelUnitTest = Invoke-CapturedProcess -Executable $VenvPython -Arguments @((Join-Path $Platform 'TEST-MODEL-MANAGER.py')) -TimeoutSeconds 180
+    if (-not [string]::IsNullOrWhiteSpace($modelUnitTest.StdOut)) {
+        Write-Host $modelUnitTest.StdOut.TrimEnd()
+    }
+    if (-not [string]::IsNullOrWhiteSpace($modelUnitTest.StdErr)) {
+        Write-Host $modelUnitTest.StdErr.TrimEnd()
+    }
+    if ($modelUnitTest.ExitCode -ne 0) {
+        $testDetails = (($modelUnitTest.StdOut + "`r`n" + $modelUnitTest.StdErr).Trim())
+        throw "Whisper model-manager tests failed with exit code $($modelUnitTest.ExitCode). $testDetails"
+    }
     & $PowerShellExe -NoLogo -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Platform 'TEST-WINDOWS-PROCESS-LAUNCH.ps1')
     $launchTestExit = [int]$LASTEXITCODE
     if ($launchTestExit -ne 0) { throw "Windows process path regression test failed with exit code $launchTestExit." }
