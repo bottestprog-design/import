@@ -81,7 +81,7 @@ function Write-LogDelta([string]$Text,[ConsoleColor]$Color) {
     }
 }
 function Invoke-NativeLogged {
-    param([string]$Executable,[string[]]$Arguments,[string]$Label,[int]$NoticeSeconds=45)
+    param([string]$Executable,[string[]]$Arguments,[string]$Label,[int]$NoticeSeconds=180)
     $id = [guid]::NewGuid().ToString('N')
     $outFile = Join-Path $script:Logs ($id + '.stdout.log')
     $errFile = Join-Path $script:Logs ($id + '.stderr.log')
@@ -91,7 +91,7 @@ function Invoke-NativeLogged {
     $proc = Start-Process -FilePath $Executable -ArgumentList $argLine -PassThru -NoNewWindow `
         -RedirectStandardOutput $outFile -RedirectStandardError $errFile -ErrorAction Stop
     $outOffset = [long]0; $errOffset = [long]0
-    $lastNotice = Get-Date; $lastOutput = Get-Date
+    $lastNotice = Get-Date; $lastOutput = Get-Date; $startedAt = Get-Date
     while (-not $proc.HasExited) {
         Start-Sleep -Seconds 2; $proc.Refresh()
         $od = Read-AppendedLogText -Path $outFile -Offset $outOffset
@@ -103,7 +103,10 @@ function Invoke-NativeLogged {
             $ob = if (Test-Path $outFile) { (Get-Item $outFile).Length } else { 0 }
             $eb = if (Test-Path $errFile) { (Get-Item $errFile).Length } else { 0 }
             $quiet = [int]((Get-Date)-$lastOutput).TotalSeconds
-            Write-Host ("$Label is still running (PID {0}); stdout {1:N0} KB, stderr {2:N0} KB; last output {3}s ago." -f $proc.Id,($ob/1KB),($eb/1KB),$quiet) -ForegroundColor Yellow
+            $elapsed = [int]((Get-Date)-$startedAt).TotalMinutes
+            $cpu = 0.0
+            try { $proc.Refresh(); $cpu = [math]::Round($proc.CPU,1) } catch {}
+            Write-Host ("{0} is still running (PID {1}); elapsed {2} min; CPU {3}s; stdout {4:N0} KB, stderr {5:N0} KB; last output {6}s ago. No duplicate process started." -f $Label,$proc.Id,$elapsed,$cpu,($ob/1KB),($eb/1KB),$quiet) -ForegroundColor Yellow
             Write-Host "Logs: $outFile | $errFile" -ForegroundColor DarkGray
             $lastNotice = Get-Date
         }
@@ -157,7 +160,7 @@ function Find-Python {
     return $null
 }
 function Invoke-Python([string]$Python,[string[]]$Arguments,[string]$Label) {
-    $res = Invoke-NativeLogged -Executable $Python -Arguments $Arguments -Label $Label -NoticeSeconds 45
+    $res = Invoke-NativeLogged -Executable $Python -Arguments $Arguments -Label $Label -NoticeSeconds 180
     if ($res.ExitCode -ne 0) { throw "$Label failed (exit $($res.ExitCode)). STDERR: $($res.StdErr) | STDOUT: $($res.StdOut)" }
     return $res
 }
@@ -181,7 +184,7 @@ function Get-Ffmpeg {
 }
 
 try {
-    Write-Host 'LOCAL AI - PLATFORM CONTINUATION INSTALLER v2.2' -ForegroundColor Cyan
+    Write-Host 'LOCAL AI - PLATFORM CONTINUATION INSTALLER v2.3' -ForegroundColor Cyan
     Write-Host 'This installer starts AFTER Ollama and Qwen are installed.'
     Write-Host 'It will NOT reinstall Ollama, download Qwen, delete model blobs, or change the Ollama model store.'
     if (Test-Path $StatusFile) { Copy-Item $StatusFile (Join-Path $Platform ('PLATFORM-STATUS-backup-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '.txt')) -Force }
@@ -262,7 +265,7 @@ try {
     if (-not $FfmpegExe) {
         $winget = Get-Command winget.exe -ErrorAction SilentlyContinue
         if ($winget) {
-            $wg = Invoke-NativeLogged -Executable $winget.Source -Arguments @('install','--exact','--id','Gyan.FFmpeg','--source','winget','--accept-package-agreements','--accept-source-agreements','--silent') -Label 'Install FFmpeg (Gyan.FFmpeg)' -NoticeSeconds 45
+            $wg = Invoke-NativeLogged -Executable $winget.Source -Arguments @('install','--exact','--id','Gyan.FFmpeg','--source','winget','--accept-package-agreements','--accept-source-agreements','--silent') -Label 'Install FFmpeg (Gyan.FFmpeg)' -NoticeSeconds 180
             Refresh-UserPath
             $FfmpegExe = Get-Ffmpeg
             if (-not $FfmpegExe) { $null = $Warnings.Add('FFmpeg installation was attempted but ffmpeg.exe is still not discoverable. Text chat works; local audio preprocessing needs FFmpeg.') }
@@ -287,7 +290,7 @@ try {
     $env:HF_HUB_DOWNLOAD_TIMEOUT = '120'
     $env:HF_HUB_DISABLE_TELEMETRY = '1'
     $whisperCode = 'import os; from faster_whisper import WhisperModel; m=WhisperModel("small",device="cpu",compute_type="int8",download_root=os.environ["WHISPER_MODEL_DIR"]); print("WHISPER_SMALL_READY")'
-    $whisper = Invoke-NativeLogged -Executable $VenvPython -Arguments @('-c',$whisperCode) -Label 'Download and validate Whisper Small (multilingual CPU INT8)' -NoticeSeconds 45
+    $whisper = Invoke-NativeLogged -Executable $VenvPython -Arguments @('-c',$whisperCode) -Label 'Download and validate Whisper Small (multilingual CPU INT8)' -NoticeSeconds 180
     if ($whisper.ExitCode -ne 0 -or $whisper.StdOut -notmatch 'WHISPER_SMALL_READY') {
         $null = $Warnings.Add('Whisper Small download/load test did not complete. Open WebUI is installed; speech-to-text will need retry after network is available.')
     }
@@ -319,9 +322,15 @@ try {
     Copy-Item (Join-Path $PSScriptRoot 'IMPORT-FILTERS.ps1') (Join-Path $Platform 'IMPORT-FILTERS.ps1') -Force
     Copy-Item (Join-Path $PSScriptRoot 'FILTER-IMPORT-GUIDE-AR.md') (Join-Path $Platform 'FILTER-IMPORT-GUIDE-AR.md') -Force
     Copy-Item (Join-Path $PSScriptRoot 'README-AR.md') (Join-Path $Platform 'README-AR-INTEGRATION.md') -Force
+    foreach ($extraName in @('DASHBOARD-SERVER.py','TEST-DASHBOARD.py','START-DASHBOARD.bat','ADD-FAST-MODEL.ps1','ADD-FAST-MODEL.bat','MODEL-PROFILES-AR.md','V2.3-ADDENDUM-AR.md','LOCALAI-STUDIO-THEME.css','RESTORE-OPENWEBUI-STYLE.ps1','RESTORE-OPENWEBUI-STYLE.bat')) {
+        $extraSource = Join-Path $PSScriptRoot $extraName
+        if (Test-Path -LiteralPath $extraSource -PathType Leaf) { Copy-Item -LiteralPath $extraSource -Destination $Platform -Force }
+    }
 
     $filterTest = Invoke-NativeLogged -Executable $VenvPython -Arguments @((Join-Path $Platform 'TEST-FILTERS.py'),'--filters-dir',$FilterDir) -Label 'Run filter syntax and behavior tests'
     if ($filterTest.ExitCode -ne 0 -or $filterTest.StdOut -notmatch 'FILTER_TESTS: SUCCESS') { throw 'Filter tests did not pass. See the filter-test child log.' }
+    $dashboardTest = Invoke-NativeLogged -Executable $VenvPython -Arguments @((Join-Path $Platform 'TEST-DASHBOARD.py')) -Label 'Run LocalAI Studio dashboard tests'
+    if ($dashboardTest.ExitCode -ne 0 -or $dashboardTest.StdOut -notmatch 'DASHBOARD_TESTS: SUCCESS') { throw 'Dashboard tests did not pass. See the dashboard-test child log.' }
 
     $status = if ($Warnings.Count -gt 0) { 'SUCCESS_WITH_WARNINGS' } else { 'SUCCESS' }
     $warningText = if ($Warnings.Count -gt 0) { $Warnings -join "`r`n- " } else { 'None' }
@@ -336,7 +345,7 @@ Data: $Data
 Open WebUI executable: $OpenWebUIExe
 FFmpeg: $FfmpegExe
 Whisper: small / multilingual / CPU INT8 / VAD enabled by launcher
-Filter sources copied: 3; syntax and behavior tests passed
+Filter sources copied: 3; syntax and behavior tests passed; dashboard tests passed
 Web search: ENABLE_WEB_SEARCH=true; WEB_SEARCH_ENGINE=duckduckgo; DDGS_BACKEND=auto
 Network scope: localhost only (127.0.0.1:8080)
 Warnings:

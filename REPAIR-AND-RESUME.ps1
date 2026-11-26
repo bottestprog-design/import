@@ -104,13 +104,16 @@ function Watch-Installer {
         foreach($f in $recent){ Show-ChangedLog -Path $f.FullName }
         if ($active.Count -eq 0) { break }
         $pids=($active | ForEach-Object { $_.ProcessId }) -join ', '
-        Write-Host "Installer-related processes still active: PID $pids. Waiting; nothing will be terminated." -ForegroundColor Yellow
-        Start-Sleep -Seconds 8
+        if (-not $script:LastWaitNotice -or ((Get-Date)-$script:LastWaitNotice).TotalSeconds -ge 180) {
+            Write-Host "Installer-related processes still active: PID $pids. Waiting; nothing will be terminated." -ForegroundColor Yellow
+            $script:LastWaitNotice = Get-Date
+        }
+        Start-Sleep -Seconds 30
     }
     Write-Host 'Existing install process has exited. Verifying installed files before deciding whether to resume.' -ForegroundColor Green
 }
 
-Write-Host 'LOCALAI PLATFORM REPAIR / RESUME v2.2' -ForegroundColor Cyan
+Write-Host 'LOCALAI PLATFORM REPAIR / RESUME v2.3' -ForegroundColor Cyan
 Write-Host 'PowerShell 5.1-safe package probing; no pip stderr is treated as a terminating error.'
 if (-not (Test-Path -LiteralPath $InstallerScript -PathType Leaf)) { throw 'INSTALL-PLATFORM.ps1 is missing from this extracted package.' }
 New-Item -ItemType Directory -Force -Path $Logs | Out-Null
@@ -120,6 +123,11 @@ $state=Get-OpenWebUIState
 Write-Host ('Open WebUI package state: Version={0}; CoreReady={1}; AudioReady={2}' -f $state.Version,$state.Installed,$state.AudioReady) -ForegroundColor Cyan
 if ($state.Installed -and $state.AudioReady) {
     Write-Host 'Open WebUI 0.13.5 and audio imports are already installed. No package reinstall is needed.' -ForegroundColor Green
+    New-Item -ItemType Directory -Force -Path $Platform | Out-Null
+    foreach ($extraName in @('DASHBOARD-SERVER.py','TEST-DASHBOARD.py','START-DASHBOARD.bat','ADD-FAST-MODEL.ps1','ADD-FAST-MODEL.bat','MODEL-PROFILES-AR.md','V2.3-ADDENDUM-AR.md','LOCALAI-STUDIO-THEME.css','RESTORE-OPENWEBUI-STYLE.ps1','RESTORE-OPENWEBUI-STYLE.bat')) {
+        $extraSource = Join-Path $PSScriptRoot $extraName
+        if (Test-Path -LiteralPath $extraSource -PathType Leaf) { Copy-Item -LiteralPath $extraSource -Destination $Platform -Force }
+    }
     $sourceStart=Join-Path $PSScriptRoot 'START-CHAT.ps1'
     $targetStart=Join-Path $Platform 'START-CHAT.ps1'
     if (Test-Path $sourceStart) { Copy-Item -LiteralPath $sourceStart -Destination $targetStart -Force }
