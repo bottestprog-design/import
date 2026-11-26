@@ -115,8 +115,8 @@ function Watch-Installer {
     Write-Host 'Existing install process has exited. Verifying installed files before deciding whether to resume.' -ForegroundColor Green
 }
 
-Write-Host 'LOCALAI PLATFORM REPAIR / RESUME v2.3' -ForegroundColor Cyan
-Write-Host 'PowerShell 5.1-safe package probing; no pip stderr is treated as a terminating error.'
+Write-Host 'LOCALAI PLATFORM REPAIR / RESUME v2.5' -ForegroundColor Cyan
+Write-Host 'Windows-safe package check; existing Open WebUI, Ollama, Qwen and user data are reused.'
 if (-not (Test-Path -LiteralPath $InstallerScript -PathType Leaf)) { throw 'INSTALL-PLATFORM.ps1 is missing from this extracted package.' }
 New-Item -ItemType Directory -Force -Path $Logs,$TempRoot | Out-Null
 $env:TEMP = $TempRoot
@@ -129,16 +129,35 @@ Write-Host ('Open WebUI package state: Version={0}; CoreReady={1}; AudioReady={2
 if ($state.Installed -and $state.AudioReady) {
     Write-Host 'Open WebUI 0.13.5 and audio imports are already installed. No package reinstall is needed.' -ForegroundColor Green
     New-Item -ItemType Directory -Force -Path $Platform | Out-Null
-    foreach ($extraName in @('DASHBOARD-SERVER.py','TEST-DASHBOARD.py','START-DASHBOARD.bat','ADD-FAST-MODEL.ps1','ADD-FAST-MODEL.bat','MODEL-PROFILES-AR.md','V2.3-ADDENDUM-AR.md','LOCALAI-STUDIO-THEME.css','RESTORE-OPENWEBUI-STYLE.ps1','RESTORE-OPENWEBUI-STYLE.bat','START-LOCALAI.bat')) {
-        $extraSource = Join-Path $PSScriptRoot $extraName
-        if (Test-Path -LiteralPath $extraSource -PathType Leaf) { Copy-Item -LiteralPath $extraSource -Destination $Platform -Force }
+    $obsoleteFiles = @('ADD-FAST-MODEL.bat','ADD-FAST-MODEL.ps1','CHECK-LOCALAI.bat','DASHBOARD-SERVER.py',
+        'FILTER-IMPORT-GUIDE-AR.md','IMPORT-FILTERS.bat','INSTALL-PLATFORM.bat','MODEL-PROFILES-AR.md',
+        'PLATFORM-FILES.txt','RESTORE-OPENWEBUI-STYLE.bat','RUN-REPAIR.bat','START-CHAT.bat',
+        'START-DASHBOARD.bat','START-HERE-AR.md','START-LOCALAI.bat','STOP-CHAT.bat',
+        'TEST-DASHBOARD.py','V2.3-ADDENDUM-AR.md','VERIFY-MODEL.bat','VERIFY-PACKAGE.bat',
+        'VERSION.txt','WATCH-CURRENT-INSTALL.bat')
+    foreach ($obsoleteName in $obsoleteFiles) {
+        $obsoletePath = Join-Path $Platform $obsoleteName
+        if (Test-Path -LiteralPath $obsoletePath -PathType Leaf) { Remove-Item -LiteralPath $obsoletePath -Force }
     }
-    $sourceStart=Join-Path $PSScriptRoot 'START-CHAT.ps1'
-    $targetStart=Join-Path $Platform 'START-CHAT.ps1'
-    if (Test-Path $sourceStart) { Copy-Item -LiteralPath $sourceStart -Destination $targetStart -Force }
-    $sourceOneClick=Join-Path $PSScriptRoot 'START-LOCALAI.bat'
-    if (Test-Path $sourceOneClick) { Copy-Item -LiteralPath $sourceOneClick -Destination (Join-Path $Platform 'START-LOCALAI.bat') -Force }
-    Write-Host 'Updated the installed chat launcher with the corrected Windows power-state flag.' -ForegroundColor Green
+    $runtimeFiles = @('LocalAI-Studio.bat','START-CHAT.ps1','STOP-CHAT.ps1','REPAIR-AND-RESUME.ps1',
+        'INSTALL-PLATFORM.ps1','CHECK-LOCALAI.ps1','VERIFY-MODEL.ps1','VERIFY-PACKAGE.ps1',
+        'IMPORT-FILTERS.ps1','RESTORE-OPENWEBUI-STYLE.ps1','LOCALAI-STUDIO-THEME.css',
+        'TEST-FILTERS.py','README-AR.md','MANIFEST-SHA256.txt')
+    foreach ($fileName in $runtimeFiles) {
+        $sourceFile = Join-Path $PSScriptRoot $fileName
+        $targetFile = Join-Path $Platform $fileName
+        if (-not (Test-Path -LiteralPath $sourceFile -PathType Leaf)) { throw "Required project file is missing: $fileName" }
+        if ([IO.Path]::GetFullPath($sourceFile) -ne [IO.Path]::GetFullPath($targetFile)) {
+            Copy-Item -LiteralPath $sourceFile -Destination $targetFile -Force
+        }
+    }
+    $sourceFilters = Join-Path $PSScriptRoot 'Filters'
+    $targetFilters = Join-Path $Platform 'Filters'
+    if ([IO.Path]::GetFullPath($sourceFilters) -ne [IO.Path]::GetFullPath($targetFilters)) {
+        New-Item -ItemType Directory -Force -Path $targetFilters | Out-Null
+        Copy-Item -Path (Join-Path $sourceFilters '*.py') -Destination $targetFilters -Force
+    }
+    Write-Host 'Updated compact LocalAI Studio files. Existing Open WebUI, Ollama and Qwen data were reused.' -ForegroundColor Green
     exit 0
 }
 if ($state.Installed -and -not $state.AudioReady) {

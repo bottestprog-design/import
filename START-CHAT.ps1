@@ -24,6 +24,7 @@ function Repair-OpenWebUIWindowsTempPath {
     if($LASTEXITCODE -ne 0 -or $probe.Count -eq 0){throw 'Could not locate the installed Open WebUI package.'}
     try{$info=([string]($probe|Select-Object -Last 1))|ConvertFrom-Json}catch{throw 'Could not parse Open WebUI package information.'}
     if(-not $info.package){throw 'Open WebUI package folder was not found.'}
+    if($info.version -ne '0.13.5'){throw "This Windows compatibility patch is validated for Open WebUI 0.13.5, not $($info.version). No vendor source was changed."}
     $managed=Join-Path ([string]$info.package) 'utils\machines\managed.py'
     if(-not(Test-Path -LiteralPath $managed -PathType Leaf)){throw "Open WebUI compatibility source missing: $managed"}
     $source=[IO.File]::ReadAllText($managed)
@@ -74,11 +75,11 @@ function Apply-LocalAITheme {
 try{
     New-Item -ItemType Directory -Force -Path $Data,$Logs,$Platform|Out-Null
     Set-TempEnvironment
-    if(-not(Test-Path -LiteralPath $Python -PathType Leaf)){throw "Project Python missing: $Python. Run RUN-REPAIR.bat only if platform is not installed."}
-    if(-not(Test-Path -LiteralPath $OpenWebUI -PathType Leaf)){throw "Open WebUI missing: $OpenWebUI. Run RUN-REPAIR.bat only if platform is not installed."}
-    if(-not(Test-Path -LiteralPath $SecretPath -PathType Leaf)){throw "Persistent WebUI secret missing: $SecretPath. Do not delete Data; run RUN-REPAIR.bat."}
+    if(-not(Test-Path -LiteralPath $Python -PathType Leaf)){throw "Project Python missing: $Python. Run LocalAI-Studio.bat repair only if platform is not installed."}
+    if(-not(Test-Path -LiteralPath $OpenWebUI -PathType Leaf)){throw "Open WebUI missing: $OpenWebUI. Run LocalAI-Studio.bat repair only if platform is not installed."}
+    if(-not(Test-Path -LiteralPath $SecretPath -PathType Leaf)){throw "Persistent WebUI secret missing: $SecretPath. Do not delete Data; run LocalAI-Studio.bat repair."}
     try{Invoke-RestMethod 'http://127.0.0.1:11434/api/version' -TimeoutSec 8|Out-Null}
-    catch{throw 'Ollama is not running. Open Ollama, wait for its local API, then double-click START-LOCALAI.bat.'}
+    catch{throw 'Ollama is not running. Open Ollama, wait for its local API, then double-click LocalAI-Studio.bat.'}
     $tags=Invoke-RestMethod 'http://127.0.0.1:11434/api/tags' -TimeoutSec 15
     $model=$tags.models|Where-Object{$_.name -eq 'local-qwen35:latest' -or $_.name -like 'local-qwen35*'}|Select-Object -First 1
     if(-not $model){$model=$tags.models|Where-Object{$_.name -like 'qwen3.5:9b-q4_K_M*'}|Select-Object -First 1}
@@ -123,13 +124,14 @@ try{
     New-Item -ItemType Directory -Force -Path $env:WHISPER_MODEL_DIR,$env:HF_HOME,$env:HUGGINGFACE_HUB_CACHE|Out-Null
 
     Repair-OpenWebUIWindowsTempPath
-    try{
-        Invoke-RestMethod 'http://127.0.0.1:8080/ready' -TimeoutSec 3|Out-Null
+    $alreadyReady=$false
+    try { Invoke-RestMethod 'http://127.0.0.1:8080/ready' -TimeoutSec 3|Out-Null; $alreadyReady=$true } catch {}
+    if($alreadyReady){
         Apply-LocalAITheme
-        Start-Process 'http://127.0.0.1:8080'
-        Write-Host 'LocalAI Studio is already running. Browser opened.' -ForegroundColor Green
+        try { Start-Process 'http://127.0.0.1:8080' } catch { Write-Host 'Open WebUI is ready; open http://127.0.0.1:8080 manually if the browser did not open.' -ForegroundColor Yellow }
+        Write-Host 'LocalAI Studio is already running and ready.' -ForegroundColor Green
         exit 0
-    }catch{}
+    }
     $listener=Get-NetTCPConnection -LocalPort 8080 -State Listen -ErrorAction SilentlyContinue|Select-Object -First 1
     if($listener){throw 'Port 8080 is occupied by a process that is not a ready Open WebUI instance. No process was stopped.'}
 
@@ -158,10 +160,10 @@ try{
         throw "Open WebUI did not become ready within 6 minutes. Process was left running for inspection. Logs: $stdout and $stderr"
     }
     Apply-LocalAITheme
-    Start-Process 'http://127.0.0.1:8080'
+    try { Start-Process 'http://127.0.0.1:8080' } catch { Write-Host 'The server is ready; open http://127.0.0.1:8080 manually if needed.' -ForegroundColor Yellow }
     Write-Host 'SUCCESS: LocalAI Studio is ready. The server continues in the background.' -ForegroundColor Green
     Write-Host 'Open WebUI: http://127.0.0.1:8080' -ForegroundColor Cyan
-    Write-Host 'To stop it, double-click STOP-CHAT.bat. Ollama and Qwen remain running.' -ForegroundColor DarkGray
+    Write-Host 'To stop it, double-click LocalAI-Studio.bat stop. Ollama and Qwen remain running.' -ForegroundColor DarkGray
     exit 0
 }catch{
     Write-Host ([Environment]::NewLine+"LOCALAI START FAILED: $($_.Exception.Message)") -ForegroundColor Red

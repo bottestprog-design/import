@@ -187,7 +187,7 @@ function Get-Ffmpeg {
 }
 
 try {
-    Write-Host 'LOCAL AI - PLATFORM CONTINUATION INSTALLER v2.3' -ForegroundColor Cyan
+    Write-Host 'LOCAL AI - PLATFORM CONTINUATION INSTALLER v2.5' -ForegroundColor Cyan
     Write-Host 'This installer starts AFTER Ollama and Qwen are installed.'
     Write-Host 'It will NOT reinstall Ollama, download Qwen, delete model blobs, or change the Ollama model store.'
     if (Test-Path $StatusFile) { Copy-Item $StatusFile (Join-Path $Platform ('PLATFORM-STATUS-backup-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '.txt')) -Force }
@@ -203,10 +203,10 @@ try {
     Write-Host "[OK] Ollama $($version.version); found model $ModelId ($([math]::Round($model.size/1GB,2)) GB)." -ForegroundColor Green
     $ModelStore = Join-Path $Root 'Models'
     if (Test-Path (Join-Path $ModelStore 'manifests')) {
-        @("STATUS: API_READY_MODEL_TAG_PRESENT","Inference test: run D:\LocalAI\Platform\VERIFY-MODEL.bat","Ollama: $($version.version)","API: http://127.0.0.1:11434","Model: $ModelId","Model size bytes: $($model.size)","Model store: $ModelStore","Model files were verified by Ollama /api/tags; no files changed by this installer.") | Set-Content -Path $EngineStatusFile -Encoding UTF8
+        @("STATUS: API_READY_MODEL_TAG_PRESENT","Inference test: run D:\LocalAI\Platform\LocalAI-Studio.bat test","Ollama: $($version.version)","API: http://127.0.0.1:11434","Model: $ModelId","Model size bytes: $($model.size)","Model store: $ModelStore","Model files were verified by Ollama /api/tags; no files changed by this installer.") | Set-Content -Path $EngineStatusFile -Encoding UTF8
         Set-Content -Path (Join-Path $Root 'MODEL-STORE-PATH.txt') -Value $ModelStore -Encoding UTF8
     } else {
-        @("STATUS: API_READY_MODEL_TAG_PRESENT","Inference test: run D:\LocalAI\Platform\VERIFY-MODEL.bat","Ollama: $($version.version)","API: http://127.0.0.1:11434","Model: $ModelId","Model size bytes: $($model.size)","Model store: see Ollama server.log") | Set-Content -Path $EngineStatusFile -Encoding UTF8
+        @("STATUS: API_READY_MODEL_TAG_PRESENT","Inference test: run D:\LocalAI\Platform\LocalAI-Studio.bat test","Ollama: $($version.version)","API: http://127.0.0.1:11434","Model: $ModelId","Model size bytes: $($model.size)","Model store: see Ollama server.log") | Set-Content -Path $EngineStatusFile -Encoding UTF8
     }
 
     $drive = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='D:'"
@@ -317,32 +317,30 @@ try {
     $acl = Invoke-NativeLogged -Executable $icacls.Source -Arguments @($secret,'/inheritance:r','/grant:r',($account+':(F)'),'SYSTEM:(F)') -Label 'Protect WebUI signing key'
     if ($acl.ExitCode -ne 0) { $null = $Warnings.Add('Could not restrict signing-key ACL. Review Windows folder permissions before storing sensitive chats.') }
 
-    # Install only the platform files; do not touch D:\LocalAI\Models or the Ollama server.
+    # Copy only files with a real runtime, repair, test, or documentation purpose.
+    $obsoleteFiles = @('ADD-FAST-MODEL.bat','ADD-FAST-MODEL.ps1','CHECK-LOCALAI.bat','DASHBOARD-SERVER.py',
+        'FILTER-IMPORT-GUIDE-AR.md','IMPORT-FILTERS.bat','INSTALL-PLATFORM.bat','MODEL-PROFILES-AR.md',
+        'PLATFORM-FILES.txt','RESTORE-OPENWEBUI-STYLE.bat','RUN-REPAIR.bat','START-CHAT.bat',
+        'START-DASHBOARD.bat','START-HERE-AR.md','START-LOCALAI.bat','STOP-CHAT.bat',
+        'TEST-DASHBOARD.py','V2.3-ADDENDUM-AR.md','VERIFY-MODEL.bat','VERIFY-PACKAGE.bat',
+        'VERSION.txt','WATCH-CURRENT-INSTALL.bat')
+    foreach ($obsoleteName in $obsoleteFiles) {
+        $obsoletePath = Join-Path $Platform $obsoleteName
+        if (Test-Path -LiteralPath $obsoletePath -PathType Leaf) { Remove-Item -LiteralPath $obsoletePath -Force }
+    }
     Copy-Item -Path (Join-Path $PSScriptRoot 'Filters\*.py') -Destination $FilterDir -Force
-    Copy-Item (Join-Path $PSScriptRoot 'TEST-FILTERS.py') (Join-Path $Platform 'TEST-FILTERS.py') -Force
-    Copy-Item (Join-Path $PSScriptRoot 'START-CHAT.bat') (Join-Path $Platform 'START-CHAT.bat') -Force
-    Copy-Item (Join-Path $PSScriptRoot 'START-LOCALAI.bat') (Join-Path $Platform 'START-LOCALAI.bat') -Force
-    Copy-Item (Join-Path $PSScriptRoot 'START-CHAT.ps1') (Join-Path $Platform 'START-CHAT.ps1') -Force
-    Copy-Item (Join-Path $PSScriptRoot 'STOP-CHAT.bat') (Join-Path $Platform 'STOP-CHAT.bat') -Force
-    Copy-Item (Join-Path $PSScriptRoot 'STOP-CHAT.ps1') (Join-Path $Platform 'STOP-CHAT.ps1') -Force
-    Copy-Item (Join-Path $PSScriptRoot 'CHECK-LOCALAI.bat') (Join-Path $Platform 'CHECK-LOCALAI.bat') -Force
-    Copy-Item (Join-Path $PSScriptRoot 'CHECK-LOCALAI.ps1') (Join-Path $Platform 'CHECK-LOCALAI.ps1') -Force
-    Copy-Item (Join-Path $PSScriptRoot 'VERIFY-MODEL.bat') (Join-Path $Platform 'VERIFY-MODEL.bat') -Force
-    Copy-Item (Join-Path $PSScriptRoot 'VERIFY-MODEL.ps1') (Join-Path $Platform 'VERIFY-MODEL.ps1') -Force
-    Copy-Item (Join-Path $PSScriptRoot 'IMPORT-FILTERS.bat') (Join-Path $Platform 'IMPORT-FILTERS.bat') -Force
-    Copy-Item (Join-Path $PSScriptRoot 'IMPORT-FILTERS.ps1') (Join-Path $Platform 'IMPORT-FILTERS.ps1') -Force
-    Copy-Item (Join-Path $PSScriptRoot 'FILTER-IMPORT-GUIDE-AR.md') (Join-Path $Platform 'FILTER-IMPORT-GUIDE-AR.md') -Force
-    Copy-Item (Join-Path $PSScriptRoot 'README-AR.md') (Join-Path $Platform 'README-AR-INTEGRATION.md') -Force
-    foreach ($extraName in @('DASHBOARD-SERVER.py','TEST-DASHBOARD.py','START-DASHBOARD.bat','ADD-FAST-MODEL.ps1','ADD-FAST-MODEL.bat','MODEL-PROFILES-AR.md','V2.3-ADDENDUM-AR.md','LOCALAI-STUDIO-THEME.css','RESTORE-OPENWEBUI-STYLE.ps1','RESTORE-OPENWEBUI-STYLE.bat')) {
-        $extraSource = Join-Path $PSScriptRoot $extraName
-        if (Test-Path -LiteralPath $extraSource -PathType Leaf) { Copy-Item -LiteralPath $extraSource -Destination $Platform -Force }
+    $runtimeFiles = @('LocalAI-Studio.bat','START-CHAT.ps1','STOP-CHAT.ps1','REPAIR-AND-RESUME.ps1',
+        'INSTALL-PLATFORM.ps1','CHECK-LOCALAI.ps1','VERIFY-MODEL.ps1','VERIFY-PACKAGE.ps1',
+        'IMPORT-FILTERS.ps1','RESTORE-OPENWEBUI-STYLE.ps1','LOCALAI-STUDIO-THEME.css',
+        'TEST-FILTERS.py','README-AR.md','MANIFEST-SHA256.txt')
+    foreach ($fileName in $runtimeFiles) {
+        $sourceFile = Join-Path $PSScriptRoot $fileName
+        if (-not (Test-Path -LiteralPath $sourceFile -PathType Leaf)) { throw "Required project file is missing: $fileName" }
+        Copy-Item -LiteralPath $sourceFile -Destination (Join-Path $Platform $fileName) -Force
     }
 
     $filterTest = Invoke-NativeLogged -Executable $VenvPython -Arguments @((Join-Path $Platform 'TEST-FILTERS.py'),'--filters-dir',$FilterDir) -Label 'Run filter syntax and behavior tests'
     if ($filterTest.ExitCode -ne 0 -or $filterTest.StdOut -notmatch 'FILTER_TESTS: SUCCESS') { throw 'Filter tests did not pass. See the filter-test child log.' }
-    $dashboardTest = Invoke-NativeLogged -Executable $VenvPython -Arguments @((Join-Path $Platform 'TEST-DASHBOARD.py')) -Label 'Run LocalAI Studio dashboard tests'
-    if ($dashboardTest.ExitCode -ne 0 -or $dashboardTest.StdOut -notmatch 'DASHBOARD_TESTS: SUCCESS') { throw 'Dashboard tests did not pass. See the dashboard-test child log.' }
-
     $status = if ($Warnings.Count -gt 0) { 'SUCCESS_WITH_WARNINGS' } else { 'SUCCESS' }
     $warningText = if ($Warnings.Count -gt 0) { $Warnings -join "`r`n- " } else { 'None' }
     @"
@@ -356,7 +354,7 @@ Data: $Data
 Open WebUI executable: $OpenWebUIExe
 FFmpeg: $FfmpegExe
 Whisper: small / multilingual / CPU INT8 / VAD enabled by launcher
-Filter sources copied: 3; syntax and behavior tests passed; dashboard tests passed
+Filter sources copied: 3; syntax and behavior tests passed
 Web search: ENABLE_WEB_SEARCH=true; WEB_SEARCH_ENGINE=duckduckgo; DDGS_BACKEND=auto
 Network scope: localhost only (127.0.0.1:8080)
 Warnings:
@@ -382,7 +380,7 @@ Completed: $(Get-Date -Format o)
         Write-Host 'Warnings:' -ForegroundColor Yellow
         foreach ($w in $Warnings) { Write-Host (' - '+$w) -ForegroundColor Yellow }
     }
-    Write-Host 'Next: run D:\LocalAI\Platform\START-CHAT.bat, create the first administrator, then import filters.' -ForegroundColor Cyan
+    Write-Host 'Next: double-click D:\LocalAI\Platform\LocalAI-Studio.bat. Create the first administrator; optional filters are available through LocalAI-Studio.bat filters.' -ForegroundColor Cyan
 }
 catch {
     $msg = $_.Exception.Message
