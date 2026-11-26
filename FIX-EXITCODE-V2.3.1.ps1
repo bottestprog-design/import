@@ -31,7 +31,7 @@ try {
     $jsonBytes = [Convert]::FromBase64String($ArgumentsBase64)
     $json = [Text.Encoding]::UTF8.GetString($jsonBytes)
     $parsed = ConvertFrom-Json -InputObject $json
-    $nativeArguments = @($parsed)
+    $nativeArguments = @($parsed.items)
     & $Executable @nativeArguments 1> $StdOutPath 2> $StdErrPath
     $rawExitCode = $LASTEXITCODE
     if ($null -eq $rawExitCode) {
@@ -63,7 +63,7 @@ New-Item -ItemType Directory -Force -Path $testRoot | Out-Null
 try {
     $powershell = Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
     foreach ($expected in @(0,37)) {
-        $json = ConvertTo-Json -InputObject @('/c',('exit ' + $expected)) -Compress
+        $json = ConvertTo-Json -InputObject ([pscustomobject]@{ items = [string[]]@('/c',('exit ' + $expected)) }) -Compress
         $encoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($json))
         $out = Join-Path $testRoot ('test-' + $expected + '.out')
         $err = Join-Path $testRoot ('test-' + $expected + '.err')
@@ -103,7 +103,7 @@ function Invoke-NativeLogged {
     if (-not (Test-Path -LiteralPath $runnerScript -PathType Leaf)) { throw 'RUN-NATIVE-WITH-EXITCODE.ps1 is missing. Re-extract the complete fixed package.' }
     $powershell = Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
     if (-not (Test-Path -LiteralPath $powershell -PathType Leaf)) { throw 'Windows PowerShell executable was not found.' }
-    $json = ConvertTo-Json -InputObject @($Arguments) -Compress -Depth 10
+    $json = ConvertTo-Json -InputObject ([pscustomobject]@{ items = [string[]]$Arguments }) -Compress -Depth 10
     $argumentsBase64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($json))
     $runnerArguments = @('-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',$runnerScript,
         '-Executable',$Executable,'-ArgumentsBase64',$argumentsBase64,
@@ -186,7 +186,7 @@ function Invoke-CapturedProcess([string]$Executable,[string[]]$Arguments,[int]$T
         if (-not (Test-Path -LiteralPath $runnerScript -PathType Leaf)) {
             return [pscustomobject]@{ExitCode=9009;StdOut='';StdErr='RUN-NATIVE-WITH-EXITCODE.ps1 is missing';TimedOut=$false}
         }
-        $json=ConvertTo-Json -InputObject @($Arguments) -Compress -Depth 10
+        $json=ConvertTo-Json -InputObject ([pscustomobject]@{ items = [string[]]$Arguments }) -Compress -Depth 10
         $argumentsBase64=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($json))
         $runnerArguments=@('-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',$runnerScript,
             '-Executable',$Executable,'-ArgumentsBase64',$argumentsBase64,
