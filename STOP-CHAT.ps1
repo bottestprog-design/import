@@ -9,8 +9,14 @@ if (-not [int]::TryParse($raw,[ref]$targetPid)) { throw 'PID file is invalid; re
 $proc = Get-CimInstance Win32_Process -Filter "ProcessId=$targetPid" -ErrorAction SilentlyContinue
 if (-not $proc) { Remove-Item $PidFile -Force; Write-Host 'Tracked Open WebUI process is already closed.' -ForegroundColor Yellow; exit 0 }
 $actual = [string]$proc.ExecutablePath
-if (-not $actual -or [IO.Path]::GetFullPath($actual) -ne [IO.Path]::GetFullPath($ExpectedExe)) {
-    throw "PID $targetPid is not the expected Open WebUI executable. Refusing to stop it. Actual path: $actual"
+$commandLine = [string]$proc.CommandLine
+$actualPath = if ($actual) { [IO.Path]::GetFullPath($actual) } else { '' }
+$expectedPath = [IO.Path]::GetFullPath($ExpectedExe)
+$expectedCommand = ($commandLine -match '(?i)(^|\s)serve(\s|$)' -and
+    $commandLine -match '(?i)--host\s+127\.0\.0\.1' -and
+    $commandLine -match '(?i)--port\s+8080')
+if ($actualPath -ne $expectedPath -or -not $expectedCommand) {
+    throw "PID $targetPid is not the tracked LocalAI Open WebUI server on 127.0.0.1:8080. Refusing to stop it. Executable: $actual; command: $commandLine"
 }
 Stop-Process -Id $targetPid -Force
 Remove-Item $PidFile -Force
