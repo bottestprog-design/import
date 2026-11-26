@@ -132,18 +132,25 @@ try{
         }else{Write-Host 'FFmpeg path record is stale; text chat still works.' -ForegroundColor Yellow}
     }
     $env:OMP_NUM_THREADS='3';$env:MKL_NUM_THREADS='3';$env:TOKENIZERS_PARALLELISM='false'
+    $env:WHISPER_MODEL='base'
     $env:WHISPER_MODEL_DIR=Join-Path $Data 'cache\whisper\models'
     $modelStatusPath=Join-Path $Platform 'MODEL-STATUS.json'
     if(Test-Path -LiteralPath $modelStatusPath -PathType Leaf){
         try {
             $modelStatus=Get-Content -LiteralPath $modelStatusPath -Raw -Encoding UTF8|ConvertFrom-Json
-            if($modelStatus.whisper.status -eq 'ready' -and (Test-Path -LiteralPath ([string]$modelStatus.whisper.path) -PathType Container)){
-                # faster-whisper accepts a local directory directly; use the verified folder
-                # so Open WebUI does not attempt to download the same model again by its alias.
-                $env:WHISPER_MODEL=[string]$modelStatus.whisper.path
-            }else{$env:WHISPER_MODEL='base'}
-        }catch{$env:WHISPER_MODEL='base'}
-    }else{$env:WHISPER_MODEL='base'}
+            $candidateCache=[string]$modelStatus.whisper.cache_dir
+            $snapshot=[string]$modelStatus.whisper.path
+            if($modelStatus.whisper.status -eq 'ready' -and
+               (Test-Path -LiteralPath $snapshot -PathType Container) -and
+               (Test-Path -LiteralPath (Join-Path $snapshot 'model.bin') -PathType Leaf) -and
+               (Test-Path -LiteralPath $candidateCache -PathType Container)){
+                # Keep the Open WebUI model alias ("base") aligned with its persisted STT setting.
+                # Point only the regular download-root variable at the verified Hugging Face cache.
+                $env:WHISPER_MODEL=[string]$modelStatus.whisper.model
+                $env:WHISPER_MODEL_DIR=$candidateCache
+            }
+        }catch{Write-Host 'Whisper cache status could not be loaded; using the configured default cache.' -ForegroundColor Yellow}
+    }
     $env:HF_HOME=Join-Path $Data 'cache\huggingface';$env:HUGGINGFACE_HUB_CACHE=Join-Path $env:HF_HOME 'hub'
     $env:WHISPER_COMPUTE_TYPE='int8';$env:WHISPER_MULTILINGUAL='true';$env:WHISPER_VAD_FILTER='true'
     $env:WHISPER_LANGUAGE='';$env:AUDIO_STT_ENGINE='';$env:AUDIO_TTS_ENGINE=''

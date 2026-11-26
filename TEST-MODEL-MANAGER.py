@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline tests for the Whisper model manager. No network or model download."""
+"""Offline tests for the Whisper cache manager. No network or model download."""
 from __future__ import annotations
 
 import importlib.util
@@ -36,6 +36,12 @@ def create_valid_model(folder: Path) -> Path:
     return folder
 
 
+def cache_snapshot(root: Path) -> Path:
+    return create_valid_model(
+        root / "models--Systran--faster-whisper-base" / "snapshots" / "test-commit"
+    )
+
+
 class WhisperManagerTests(unittest.TestCase):
     def test_accepts_faster_whisper_ctranslate2_config(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -54,52 +60,67 @@ class WhisperManagerTests(unittest.TestCase):
             self.assertFalse(valid)
             self.assertIn("lang_ids", detail)
 
-    def test_reuses_local_model_folder_without_downloader(self):
+    def test_reuses_configured_huggingface_cache(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            cache = create_valid_model(root / "cache")
-            target = root / "data" / "whisper" / "models"
+            cache = root / "configured-cache"
+            snapshot = cache_snapshot(cache)
 
-            def unexpected_downloader(*args, **kwargs):
-                raise AssertionError("valid local model must not trigger download")
+            def fake_downloader(model_id, cache_dir=None, local_files_only=False):
+                self.assertEqual(model_id, "base")
+                self.assertEqual(Path(cache_dir), cache.resolve())
+                self.assertTrue(local_files_only)
+                return str(snapshot)
 
-            installed, source = HELPER.ensure_model(
-                "Systran/faster-whisper-base",
-                target,
-                cache_roots=[cache],
-                downloader=unexpected_downloader,
+            found, selected_cache, source = HELPER.ensure_model(
+                "base", cache, downloader=fake_downloader
             )
-            self.assertTrue(HELPER.validate_model_directory(installed)[0])
-            self.assertIn("validated local model folder", source)
+            self.assertEqual(found, snapshot.resolve())
+            self.assertEqual(selected_cache, cache.resolve())
+            self.assertIn("configured Whisper cache", source)
 
-    def test_downloads_to_staging_and_preserves_incomplete_target(self):
+    def test_reuses_another_local_huggingface_cache(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            target = root / "data" / "whisper" / "models"
-            target.mkdir(parents=True)
-            (target / "partial-download.bin").write_bytes(b"partial")
-            empty_cache = root / "empty-cache"
-            empty_cache.mkdir()
+            configured = root / "configured"
+            external = root / "old-hf-cache"
+            snapshot = cache_snapshot(external)
             calls = []
 
-            def fake_downloader(model_id, output_dir=None, local_files_only=False, cache_dir=None):
-                calls.append((model_id, output_dir, local_files_only, cache_dir))
-                if local_files_only:
-                    raise FileNotFoundError("not cached")
-                return str(create_valid_model(Path(output_dir)))
+            def fake_downloader(model_id, cache_dir=None, local_files_only=False):
+                calls.append((Path(cache_dir), local_files_only))
+                if Path(cache_dir) == external and local_files_only:
+                    return str(snapshot)
+                raise FileNotFoundError("not in this cache")
 
-            installed, source = HELPER.ensure_model(
-                "Systran/faster-whisper-base",
-                target,
-                cache_roots=[empty_cache],
-                downloader=fake_downloader,
+            found, selected_cache, source = HELPER.ensure_model(
+                "base", configured, cache_roots=[external], downloader=fake_downloader
             )
-            self.assertTrue(HELPER.validate_model_directory(installed)[0])
-            self.assertIn("downloaded and validated", source)
-            self.assertTrue(list(target.parent.glob("models.incomplete-backup-*")))
+            self.assertEqual(found, snapshot.resolve())
+            self.assertEqual(selected_cache, external.resolve())
+            self.assertIn("reused local Hugging Face cache", source)
             self.assertEqual(len(calls), 2)
-            self.assertTrue(calls[0][2])
-            self.assertFalse(calls[1][2])
+
+    def test_downloads_into_the_open_webui_cache_root(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            cache = root / "configured-cache"
+            calls = []
+
+            def fake_downloader(model_id, cache_dir=None, local_files_only=False):
+                calls.append((model_id, Path(cache_dir), local_files_only))
+                if local_files_only:
+                    raise FileNotFoundError("not in cache")
+                return str(cache_snapshot(Path(cache_dir)))
+
+            found, selected_cache, source = HELPER.ensure_model(
+                "base", cache, downloader=fake_downloader
+            )
+            self.assertTrue(HELPER.validate_model_directory(found)[0])
+            self.assertEqual(selected_cache, cache.resolve())
+            self.assertIn("downloaded and validated", source)
+            self.assertEqual(calls[-1], ("base", cache.resolve(), False))
+            self.assertTrue(cache.exists())
 
     def test_rejects_missing_model_files(self):
         with tempfile.TemporaryDirectory() as temp:

@@ -6,6 +6,7 @@ $Data = Join-Path $Platform 'Data'
 $TempRoot = Join-Path $Data 'Temp'
 $VenvPython = Join-Path $Platform '.venv\Scripts\python.exe'
 $OpenWebUIExe = Join-Path $Platform '.venv\Scripts\open-webui.exe'
+$PowerShellExe = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
 $InstallerScript = Join-Path $PSScriptRoot 'INSTALL-PLATFORM.ps1'
 $script:LogState = @{}
 
@@ -115,7 +116,7 @@ function Watch-Installer {
     Write-Host 'Existing install process has exited. Verifying installed files before deciding whether to resume.' -ForegroundColor Green
 }
 
-Write-Host 'LOCALAI PLATFORM REPAIR / RESUME v3.1' -ForegroundColor Cyan
+Write-Host 'LOCALAI PLATFORM REPAIR / RESUME v3.2' -ForegroundColor Cyan
 Write-Host 'Windows-safe package check; existing Open WebUI, Ollama, Qwen and user data are reused.'
 if (-not (Test-Path -LiteralPath $InstallerScript -PathType Leaf)) { throw 'INSTALL-PLATFORM.ps1 is missing from this extracted package.' }
 New-Item -ItemType Directory -Force -Path $Logs,$TempRoot | Out-Null
@@ -157,12 +158,16 @@ if ($state.Installed -and $state.AudioReady) {
         New-Item -ItemType Directory -Force -Path $targetFilters | Out-Null
         Copy-Item -Path (Join-Path $sourceFilters '*.py') -Destination $targetFilters -Force
     }
-    $modelUnitTest = Start-Process -FilePath $VenvPython -ArgumentList @((Join-Path $Platform 'TEST-MODEL-MANAGER.py')) -Wait -PassThru -NoNewWindow
-    if ($modelUnitTest.ExitCode -ne 0) { throw 'Whisper model-manager tests failed. See the repair log.' }
+    $modelUnitTestOutput = @(& $VenvPython (Join-Path $Platform 'TEST-MODEL-MANAGER.py') 2>&1)
+    $modelUnitTestExit = [int]$LASTEXITCODE
+    $modelUnitTestOutput | ForEach-Object { Write-Host $_ }
+    if ($modelUnitTestExit -ne 0) { throw "Whisper model-manager tests failed with exit code $modelUnitTestExit. See the repair log." }
     $modelManager = Join-Path $PSScriptRoot 'ENSURE-MODELS.ps1'
     if (-not (Test-Path -LiteralPath $modelManager -PathType Leaf)) { throw 'ENSURE-MODELS.ps1 is missing from the package.' }
-    $modelProcess = Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') -ArgumentList @('-NoLogo','-NoProfile','-ExecutionPolicy','Bypass','-File',$modelManager) -Wait -PassThru -NoNewWindow
-    if ($modelProcess.ExitCode -ne 0) { throw 'Qwen/Whisper model verification failed. See D:\LocalAI\Platform\MODEL-STATUS.txt.' }
+    Write-Host 'Checking Qwen and provisioning the Whisper cache with Windows PowerShell 5.1...' -ForegroundColor Cyan
+    & $PowerShellExe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $modelManager
+    $modelExitCode = [int]$LASTEXITCODE
+    if ($modelExitCode -ne 0) { throw "Qwen/Whisper model verification failed (exit $modelExitCode). See D:\LocalAI\Platform\MODEL-STATUS.txt." }
     $modelStatus = Get-Content -LiteralPath (Join-Path $Platform 'MODEL-STATUS.json') -Raw -Encoding UTF8 | ConvertFrom-Json
     if ($modelStatus.whisper.status -ne 'ready') { Write-Host "Qwen is ready; Whisper $($modelStatus.whisper.model) needs a network retry. See MODEL-STATUS.txt." -ForegroundColor Yellow }
     Write-Host 'Updated LocalAI Studio files and checked the configured models. Existing Ollama and WebUI data were reused.' -ForegroundColor Green

@@ -312,7 +312,7 @@ try {
     $runtimeFiles = @('LocalAI-Studio.bat','START-CHAT.ps1','STOP-CHAT.ps1','REPAIR-AND-RESUME.ps1',
         'INSTALL-PLATFORM.ps1','CHECK-LOCALAI.ps1','VERIFY-MODEL.ps1','VERIFY-PACKAGE.ps1',
         'IMPORT-FILTERS.ps1','RESTORE-OPENWEBUI-STYLE.ps1','LOCALAI-STUDIO-THEME.css',
-        'TEST-FILTERS.py','README-AR.md','MANIFEST-SHA256.txt','ENSURE-MODELS.ps1','MODELS.json','WHISPER-MODEL-MANAGER.py','TEST-MODEL-MANAGER.py')
+        'TEST-FILTERS.py','README-AR.md','MANIFEST-SHA256.txt','ENSURE-MODELS.ps1','MODELS.json','WHISPER-MODEL-MANAGER.py','TEST-MODEL-MANAGER.py','TEST-WINDOWS-PROCESS-LAUNCH.ps1')
     foreach ($fileName in $runtimeFiles) {
         $sourceFile = Join-Path $PSScriptRoot $fileName
         if (-not (Test-Path -LiteralPath $sourceFile -PathType Leaf)) { throw "Required project file is missing: $fileName" }

@@ -154,7 +154,7 @@ goto :HELP
 
 :HELP
 echo.
-echo LocalAI Studio v3.1
+echo LocalAI Studio v3.2
 echo.
 echo Double-click this file to verify, repair if needed, and start the chat.
 echo.

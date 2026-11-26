@@ -117,6 +117,7 @@ if (-not (Test-Path -LiteralPath $launcherPath -PathType Leaf)) {
         'ENSURE-MODELS.ps1',
         'WHISPER-MODEL-MANAGER.py',
         'TEST-MODEL-MANAGER.py',
+        'TEST-WINDOWS-PROCESS-LAUNCH.ps1',
         'MODELS.json',
         'TEST-FILTERS.py',
         'Filters\01-Trusted-Content-Guard.py',

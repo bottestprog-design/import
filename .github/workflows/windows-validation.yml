@@ -34,6 +34,10 @@ jobs:
             Write-Host ("[PASS] {0}" -f $file.Name) -ForegroundColor Green
           }
 
+      - name: Test Windows PowerShell argument handling with paths containing spaces
+        shell: powershell
+        run: .\TEST-WINDOWS-PROCESS-LAUNCH.ps1
+
       - name: Verify package
         shell: powershell
         run: .\VERIFY-PACKAGE.ps1

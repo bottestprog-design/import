@@ -340,11 +340,11 @@ function Ensure-QwenModel {
 }
 
 function Ensure-WhisperModel {
-    $modelId = [string]$script:Config.whisper.repository
     $modelSize = [string]$script:Config.whisper.model_size
+    $repository = [string]$script:Config.whisper.repository
     $relative = [string]$script:Config.whisper.cache_relative_path
     if ([string]::IsNullOrWhiteSpace($relative)) { throw 'MODELS.json whisper.cache_relative_path is empty.' }
-    $modelDir = Join-Path $Platform ($relative -replace '^Data[\\/]', 'Data\')
+    $modelCache = Join-Path $Platform ($relative -replace '^Data[\\/]', 'Data\')
     $helper = Join-Path $PSScriptRoot 'WHISPER-MODEL-MANAGER.py'
     if (-not (Test-Path -LiteralPath $helper -PathType Leaf)) { throw "Whisper model helper is missing: $helper" }
 
@@ -353,14 +353,14 @@ function Ensure-WhisperModel {
     $env:HF_HUB_DISABLE_TELEMETRY = '1'
     $env:HF_HOME = Join-Path $Data 'cache\huggingface'
     $env:HUGGINGFACE_HUB_CACHE = Join-Path $env:HF_HOME 'hub'
-    New-Item -ItemType Directory -Force -Path $env:HF_HOME,$env:HUGGINGFACE_HUB_CACHE,(Split-Path -Parent $modelDir) | Out-Null
+    New-Item -ItemType Directory -Force -Path $env:HF_HOME,$env:HUGGINGFACE_HUB_CACHE,$modelCache | Out-Null
 
     $cacheRoots = @(
         $env:HUGGINGFACE_HUB_CACHE,
         (Join-Path $env:USERPROFILE '.cache\huggingface\hub'),
         (Join-Path $env:LOCALAPPDATA 'huggingface\hub')
     ) + @($script:Config.whisper.search_cache_roots)
-    $pythonArgs = @($helper,'--model-id',$modelId,'--output-dir',$modelDir)
+    $pythonArgs = @($helper,'--model-id',$modelSize,'--cache-dir',$modelCache)
     foreach ($cacheRoot in $cacheRoots) {
         if (-not [string]::IsNullOrWhiteSpace([string]$cacheRoot)) {
             $pythonArgs += @('--cache-root',[string]$cacheRoot)
@@ -368,7 +368,7 @@ function Ensure-WhisperModel {
     }
     if (-not [bool]$script:Config.whisper.auto_download_when_missing) { $pythonArgs += '--no-download' }
 
-    Write-Host "[MODEL] Reusing local Whisper $modelSize files when available; otherwise downloading $modelId..." -ForegroundColor Cyan
+    Write-Host "[MODEL] Checking the Open WebUI Whisper model '$modelSize' ($repository) in Hugging Face cache..." -ForegroundColor Cyan
     $oldPreference = $ErrorActionPreference
     try {
         $ErrorActionPreference = 'Continue'
@@ -376,20 +376,25 @@ function Ensure-WhisperModel {
         $pythonExit = $LASTEXITCODE
     } finally { $ErrorActionPreference = $oldPreference }
     $combined = $output -join [Environment]::NewLine
+    $snapshotPath = ''
+    $selectedCache = $modelCache
     if ($pythonExit -eq 0 -and $combined -match '(?m)^WHISPER_READY=(.+)$') {
+        $snapshotPath = $matches[1].Trim()
+        if ($combined -match '(?m)^WHISPER_CACHE_DIR=(.+)$') { $selectedCache = $matches[1].Trim() }
         $script:Status.whisper.model = $modelSize
         $script:Status.whisper.status = 'ready'
-        $script:Status.whisper.path = $matches[1].Trim()
-        $script:Status.whisper.cache_dir = $modelDir
+        $script:Status.whisper.path = $snapshotPath
+        $script:Status.whisper.cache_dir = $selectedCache
         if ($combined -match '(?m)^WHISPER_SOURCE=(.+)$') { $script:Status.whisper.source = $matches[1].Trim() }
-        Write-Host "[OK] Whisper $modelSize is ready: $($script:Status.whisper.path)" -ForegroundColor Green
+        Write-Host "[OK] Whisper '$modelSize' is cached at: $snapshotPath" -ForegroundColor Green
+        Write-Host "[OK] Open WebUI WHISPER_MODEL_DIR: $selectedCache" -ForegroundColor Green
         return
     }
 
-    $warning = "Whisper $modelSize is not ready (Python exit $pythonExit): $combined"
+    $warning = "Whisper $modelSize ($repository) is not ready (Python exit $pythonExit): $combined"
     $script:Status.whisper.model = $modelSize
     $script:Status.whisper.status = 'warning_missing_or_download_failed'
-    $script:Status.whisper.cache_dir = $modelDir
+    $script:Status.whisper.cache_dir = $modelCache
     $script:Warnings.Add($warning)
     Write-Host "[WARN] $warning" -ForegroundColor Yellow
     if ($RequireWhisper) { throw $warning }
