@@ -187,9 +187,9 @@ function Get-Ffmpeg {
 }
 
 try {
-    Write-Host 'LOCAL AI - PLATFORM CONTINUATION INSTALLER v2.6' -ForegroundColor Cyan
-    Write-Host 'This installer starts AFTER Ollama and Qwen are installed.'
-    Write-Host 'It will NOT reinstall Ollama, download Qwen, delete model blobs, or change the Ollama model store.'
+    Write-Host 'LOCAL AI - PLATFORM CONTINUATION INSTALLER v3.1' -ForegroundColor Cyan
+    Write-Host 'This installer starts after Ollama is running. The model manager reuses or provisions configured models.'
+    Write-Host 'It will NOT reinstall/restart Ollama or delete model blobs. Missing model data is downloaded only after local discovery fails.'
     if (Test-Path $StatusFile) { Copy-Item $StatusFile (Join-Path $Platform ('PLATFORM-STATUS-backup-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '.txt')) -Force }
 
     # Verify the real running Ollama API and existing model tag. No ENGINE-STATUS marker is required.
@@ -312,7 +312,7 @@ try {
     $runtimeFiles = @('LocalAI-Studio.bat','START-CHAT.ps1','STOP-CHAT.ps1','REPAIR-AND-RESUME.ps1',
         'INSTALL-PLATFORM.ps1','CHECK-LOCALAI.ps1','VERIFY-MODEL.ps1','VERIFY-PACKAGE.ps1',
         'IMPORT-FILTERS.ps1','RESTORE-OPENWEBUI-STYLE.ps1','LOCALAI-STUDIO-THEME.css',
-        'TEST-FILTERS.py','README-AR.md','MANIFEST-SHA256.txt','ENSURE-MODELS.ps1','MODELS.json')
+        'TEST-FILTERS.py','README-AR.md','MANIFEST-SHA256.txt','ENSURE-MODELS.ps1','MODELS.json','WHISPER-MODEL-MANAGER.py','TEST-MODEL-MANAGER.py')
     foreach ($fileName in $runtimeFiles) {
         $sourceFile = Join-Path $PSScriptRoot $fileName
         if (-not (Test-Path -LiteralPath $sourceFile -PathType Leaf)) { throw "Required project file is missing: $fileName" }
@@ -330,7 +330,7 @@ try {
     $engineStatus = Get-Content -LiteralPath (Join-Path $Platform 'MODEL-STATUS.json') -Raw -Encoding UTF8 | ConvertFrom-Json
     $ModelId = [string]$engineStatus.ollama.tag
     if (-not $ModelId) { throw 'Model manager returned success without a Qwen model tag.' }
-    if ($engineStatus.whisper.status -ne 'ready') { $null = $Warnings.Add('Whisper Small is not ready; text chat remains available. Review MODEL-STATUS.txt.') }
+    if ($engineStatus.whisper.status -ne 'ready') { $null = $Warnings.Add('Whisper $($engineStatus.whisper.model) is not ready; text chat remains available. Review MODEL-STATUS.txt.') }
     $status = if ($Warnings.Count -gt 0) { 'SUCCESS_WITH_WARNINGS' } else { 'SUCCESS' }
     $warningText = if ($Warnings.Count -gt 0) { $Warnings -join "`r`n- " } else { 'None' }
     @"
@@ -343,14 +343,14 @@ Platform: $Platform
 Data: $Data
 Open WebUI executable: $OpenWebUIExe
 FFmpeg: $FfmpegExe
-Whisper: small / multilingual / CPU INT8 / VAD enabled by launcher
+Whisper: $($engineStatus.whisper.model) / multilingual / CPU INT8 / model path $($engineStatus.whisper.path)
 Filter sources copied: 3; syntax and behavior tests passed
 Web search: ENABLE_WEB_SEARCH=true; WEB_SEARCH_ENGINE=duckduckgo; DDGS_BACKEND=auto
 Network scope: localhost only (127.0.0.1:8080)
 Warnings:
 - $warningText
 Installer log: $LogFile
-IMPORTANT: The model was not downloaded or modified by this installer.
+Ollama was not restarted or reinstalled. The model manager reuses existing Qwen data where possible and imports/downloads missing model data only when required.
 "@ | Set-Content -Path $StatusFile -Encoding UTF8
     @"
 STATUS: $status

@@ -115,7 +115,7 @@ function Watch-Installer {
     Write-Host 'Existing install process has exited. Verifying installed files before deciding whether to resume.' -ForegroundColor Green
 }
 
-Write-Host 'LOCALAI PLATFORM REPAIR / RESUME v2.6' -ForegroundColor Cyan
+Write-Host 'LOCALAI PLATFORM REPAIR / RESUME v3.1' -ForegroundColor Cyan
 Write-Host 'Windows-safe package check; existing Open WebUI, Ollama, Qwen and user data are reused.'
 if (-not (Test-Path -LiteralPath $InstallerScript -PathType Leaf)) { throw 'INSTALL-PLATFORM.ps1 is missing from this extracted package.' }
 New-Item -ItemType Directory -Force -Path $Logs,$TempRoot | Out-Null
@@ -142,7 +142,7 @@ if ($state.Installed -and $state.AudioReady) {
     $runtimeFiles = @('LocalAI-Studio.bat','START-CHAT.ps1','STOP-CHAT.ps1','REPAIR-AND-RESUME.ps1',
         'INSTALL-PLATFORM.ps1','CHECK-LOCALAI.ps1','VERIFY-MODEL.ps1','VERIFY-PACKAGE.ps1',
         'IMPORT-FILTERS.ps1','RESTORE-OPENWEBUI-STYLE.ps1','LOCALAI-STUDIO-THEME.css',
-        'TEST-FILTERS.py','README-AR.md','MANIFEST-SHA256.txt','ENSURE-MODELS.ps1','MODELS.json')
+        'TEST-FILTERS.py','README-AR.md','MANIFEST-SHA256.txt','ENSURE-MODELS.ps1','MODELS.json','WHISPER-MODEL-MANAGER.py','TEST-MODEL-MANAGER.py')
     foreach ($fileName in $runtimeFiles) {
         $sourceFile = Join-Path $PSScriptRoot $fileName
         $targetFile = Join-Path $Platform $fileName
@@ -161,7 +161,9 @@ if ($state.Installed -and $state.AudioReady) {
     if (-not (Test-Path -LiteralPath $modelManager -PathType Leaf)) { throw 'ENSURE-MODELS.ps1 is missing from the package.' }
     $modelProcess = Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') -ArgumentList @('-NoLogo','-NoProfile','-ExecutionPolicy','Bypass','-File',$modelManager) -Wait -PassThru -NoNewWindow
     if ($modelProcess.ExitCode -ne 0) { throw 'Qwen/Whisper model verification failed. See D:\LocalAI\Platform\MODEL-STATUS.txt.' }
-    Write-Host 'Updated compact LocalAI Studio files and verified the configured models. Existing Ollama and WebUI data were reused.' -ForegroundColor Green
+    $modelStatus = Get-Content -LiteralPath (Join-Path $Platform 'MODEL-STATUS.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    if ($modelStatus.whisper.status -ne 'ready') { Write-Host "Qwen is ready; Whisper $($modelStatus.whisper.model) needs a network retry. See MODEL-STATUS.txt." -ForegroundColor Yellow }
+    Write-Host 'Updated LocalAI Studio files and checked the configured models. Existing Ollama and WebUI data were reused.' -ForegroundColor Green
     exit 0
 }
 if ($state.Installed -and -not $state.AudioReady) {

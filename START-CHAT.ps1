@@ -16,13 +16,23 @@ function Set-TempEnvironment {
     New-Item -ItemType Directory -Force -Path $TempRoot | Out-Null
     $env:TEMP=$TempRoot; $env:TMP=$TempRoot; $env:TMPDIR=$TempRoot
 }
+function Invoke-PythonText([string]$Code) {
+    $scriptPath = Join-Path $TempRoot ('localai-python-' + [guid]::NewGuid().ToString('N') + '.py')
+    [IO.File]::WriteAllText($scriptPath,$Code,[System.Text.UTF8Encoding]::new($false))
+    try {
+        $lines = @(& $Python $scriptPath 2>&1)
+        $exitCode = [int]$LASTEXITCODE
+        return [pscustomobject]@{ ExitCode=$exitCode; Output=@($lines) }
+    } finally { Remove-Item -LiteralPath $scriptPath -Force -ErrorAction SilentlyContinue }
+}
 function Repair-OpenWebUIWindowsTempPath {
     # Open WebUI 0.13.5 has a Unix-only /tmp argument in utils/machines/managed.py.
     # Replace only that line and preserve the original vendor file once.
     $probeCode='import importlib.util,json; from importlib.metadata import version; from pathlib import Path; s=importlib.util.find_spec("open_webui"); print(json.dumps({"version":version("open-webui"),"package":str(Path(s.origin).parent) if s and s.origin else ""}))'
-    $probe=@(& $Python -c $probeCode 2>&1)
-    if($LASTEXITCODE -ne 0 -or $probe.Count -eq 0){throw 'Could not locate the installed Open WebUI package.'}
-    try{$info=([string]($probe|Select-Object -Last 1))|ConvertFrom-Json}catch{throw 'Could not parse Open WebUI package information.'}
+    $probeResult=Invoke-PythonText $probeCode
+    $probe=$probeResult.Output
+    if($probeResult.ExitCode -ne 0 -or $probe.Count -eq 0){throw "Could not locate the installed Open WebUI package: $($probe -join ' ')"}
+    try{$info=([string]($probe|Select-Object -Last 1))|ConvertFrom-Json}catch{throw "Could not parse Open WebUI package information: $($probe -join ' ')"}
     if(-not $info.package){throw 'Open WebUI package folder was not found.'}
     if($info.version -ne '0.13.5'){throw "This Windows compatibility patch is validated for Open WebUI 0.13.5, not $($info.version). No vendor source was changed."}
     $managed=Join-Path ([string]$info.package) 'utils\machines\managed.py'
@@ -44,8 +54,8 @@ function Repair-OpenWebUIWindowsTempPath {
         throw "Expected /tmp line was not found. No vendor file was changed: $managed"
     }
     $test='import os,tempfile; p=tempfile.gettempdir(); d=tempfile.mkdtemp(prefix="localai-check-",dir=p); os.rmdir(d); print("TEMP_OK="+p)'
-    $result=@(& $Python -c $test 2>&1)
-    if($LASTEXITCODE -ne 0 -or -not(($result -join [Environment]::NewLine)-match 'TEMP_OK=')){throw "Windows temp folder is not writable: $TempRoot"}
+    $result=Invoke-PythonText $test
+    if($result.ExitCode -ne 0 -or -not(($result.Output -join [Environment]::NewLine)-match 'TEMP_OK=')){throw "Windows temp folder is not writable: $TempRoot. $($result.Output -join ' ')"}
     Write-Host "[OK] Python temp folder: $TempRoot" -ForegroundColor Green
 }
 function Apply-LocalAITheme {
@@ -55,8 +65,9 @@ function Apply-LocalAITheme {
     if(-not(Test-Path -LiteralPath $target -PathType Leaf)){return}
     try{
         $code='import importlib.util,pathlib; s=importlib.util.find_spec("open_webui"); print(str(pathlib.Path(s.origin).parent/"static"/"custom.css") if s and s.origin else "")'
-        $o=@(& $Python -c $code 2>&1)
-        if($LASTEXITCODE -ne 0 -or $o.Count -eq 0){throw 'Could not locate Open WebUI static assets.'}
+        $probe=Invoke-PythonText $code
+        $o=$probe.Output
+        if($probe.ExitCode -ne 0 -or $o.Count -eq 0){throw 'Could not locate Open WebUI static assets.'}
         $css=([string]($o|Select-Object -Last 1)).Trim()
         if(-not $css){throw 'Open WebUI custom.css path is empty.'}
         $static=Split-Path -Parent $css
