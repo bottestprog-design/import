@@ -115,7 +115,7 @@ function Watch-Installer {
     Write-Host 'Existing install process has exited. Verifying installed files before deciding whether to resume.' -ForegroundColor Green
 }
 
-Write-Host 'LOCALAI PLATFORM REPAIR / RESUME v2.5' -ForegroundColor Cyan
+Write-Host 'LOCALAI PLATFORM REPAIR / RESUME v2.6' -ForegroundColor Cyan
 Write-Host 'Windows-safe package check; existing Open WebUI, Ollama, Qwen and user data are reused.'
 if (-not (Test-Path -LiteralPath $InstallerScript -PathType Leaf)) { throw 'INSTALL-PLATFORM.ps1 is missing from this extracted package.' }
 New-Item -ItemType Directory -Force -Path $Logs,$TempRoot | Out-Null

@@ -187,7 +187,7 @@ function Get-Ffmpeg {
 }
 
 try {
-    Write-Host 'LOCAL AI - PLATFORM CONTINUATION INSTALLER v2.5' -ForegroundColor Cyan
+    Write-Host 'LOCAL AI - PLATFORM CONTINUATION INSTALLER v2.6' -ForegroundColor Cyan
     Write-Host 'This installer starts AFTER Ollama and Qwen are installed.'
     Write-Host 'It will NOT reinstall Ollama, download Qwen, delete model blobs, or change the Ollama model store.'
     if (Test-Path $StatusFile) { Copy-Item $StatusFile (Join-Path $Platform ('PLATFORM-STATUS-backup-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '.txt')) -Force }
