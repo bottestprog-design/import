@@ -54,7 +54,7 @@ if (-not $ffmpeg) {
 }
 Add-Check 'FFmpeg' ([bool]$ffmpeg) $(if ($ffmpeg) { $ffmpeg.Source } else { 'Not found; text chat remains available' })
 $whisperRoot = Join-Path $Platform 'Data\cache\whisper\models'
-$whisperFile = if (Test-Path -LiteralPath $whisperRoot) { Get-ChildItem -LiteralPath $whisperRoot -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 } else { $null }
+$whisperFile = if (Test-Path -LiteralPath $whisperRoot) { Get-ChildItem -LiteralPath $whisperRoot -Filter 'model.bin' -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 } else { $null }
 Add-Check 'Whisper model cache' ($null -ne $whisperFile) $(if ($whisperFile) { $whisperRoot } else { 'Not found; speech-to-text may need a first-use download' })
 foreach ($name in @('01-Trusted-Content-Guard.py','02-Accuracy-Thinking.py','03-Selective-Self-Review.py')) {
     $path = Join-Path $Platform ('Filters\' + $name)

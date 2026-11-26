@@ -112,7 +112,7 @@ print(json.dumps({"version":version,"core_import":core_import,"core_error":local
     $whisperRoot=Join-Path $Platform 'Data\cache\whisper\models'
     $whisperFile=$null
     if(Test-Path -LiteralPath $whisperRoot -PathType Container){
-        $whisperFile=Get-ChildItem -LiteralPath $whisperRoot -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+        $whisperFile=Get-ChildItem -LiteralPath $whisperRoot -Filter 'model.bin' -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
     }
     $whisperReady=($null -ne $whisperFile)
     return [pscustomobject]@{Installed=$core;Version=$info.version;AudioReady=($info.audio -eq $true -and $info.av_version -eq '14.0.1');WhisperReady=$whisperReady;Detail=($info | ConvertTo-Json -Compress)}
@@ -170,7 +170,7 @@ try {
     $script:InstallLockStream=[IO.File]::Open($lockPath,[IO.FileMode]::OpenOrCreate,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)
 } catch {
     Write-Host 'Another LocalAI installer/recovery process already owns the installation lock. No second installer was started.' -ForegroundColor Yellow
-    exit 0
+    exit 10
 }
 foreach ($maintenanceFile in @('DIAGNOSTICS.ps1','DIAGNOSTICS.bat','BACKUP-LOCALAI.ps1','BACKUP-LOCALAI.bat')) {
     $source = Join-Path $PSScriptRoot $maintenanceFile

@@ -18,6 +18,9 @@ echo.
 if "%RC%"=="0" (
   echo PLATFORM REPAIR / RESUME FINISHED.
   echo See D:\LocalAI\Platform\PLATFORM-STATUS.txt
+) else if "%RC%"=="10" (
+  echo Another LocalAI setup process already owns the lock.
+  echo No duplicate installer was started. Check the other setup window.
 ) else (
   echo REPAIR EXIT CODE: %RC%.
   echo See D:\LocalAI\Logs and keep the venv and model folders.
