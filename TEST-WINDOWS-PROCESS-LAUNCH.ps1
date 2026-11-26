@@ -26,6 +26,36 @@ exit 0
 [IO.File]::WriteAllText($expectedPath, 'argument sentinel', [System.Text.UTF8Encoding]::new($false))
 
 try {
+    # Load the same capture helper used by the repair script and prove that a child
+    # process may write to stderr and still exit successfully under ErrorAction Stop.
+    $repairPath = Join-Path $PSScriptRoot 'REPAIR-AND-RESUME.ps1'
+    $nullTokens = $null
+    $nullErrors = $null
+    $repairAst = [System.Management.Automation.Language.Parser]::ParseFile($repairPath, [ref]$nullTokens, [ref]$nullErrors)
+    $quoteAst = $repairAst.Find({
+        param($node)
+        $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Quote-ProcessArgument'
+    }, $true)
+    $captureAst = $repairAst.Find({
+        param($node)
+        $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Invoke-CapturedProcess'
+    }, $true)
+    if (-not $quoteAst -or -not $captureAst) {
+        throw 'The repair script is missing its tested native-process capture helpers.'
+    }
+    . ([scriptblock]::Create($quoteAst.Extent.Text))
+    . ([scriptblock]::Create($captureAst.Extent.Text))
+    $stderrProbe = Invoke-CapturedProcess -Executable $powerShellExe -Arguments @(
+        '-NoLogo',
+        '-NoProfile',
+        '-Command',
+        "[Console]::Error.WriteLine('NATIVE_STDERR_SENTINEL'); exit 0"
+    ) -TimeoutSeconds 20
+    if ($stderrProbe.ExitCode -ne 0 -or $stderrProbe.StdErr -notmatch 'NATIVE_STDERR_SENTINEL') {
+        throw "Native stderr capture regression failed: exit=$($stderrProbe.ExitCode); stderr=$($stderrProbe.StdErr)"
+    }
+    Write-Host '[PASS] Native stderr is captured without triggering NativeCommandError.' -ForegroundColor Green
+
     # This matches the corrected REPAIR-AND-RESUME.ps1 call pattern:
     # invoke powershell.exe directly so the script path remains one argument.
     & $powerShellExe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $childScript $expectedPath $markerPath
@@ -48,9 +78,16 @@ try {
     if ($repairSource -notmatch '(?m)^\s*&\s*\$PowerShellExe\s+-NoLogo.*-File\s+\$modelManager') {
         throw 'The repair script is missing the validated direct PowerShell invocation.'
     }
+    if ($repairSource -notmatch '(?is)\$modelUnitTest\s*=\s*Invoke-CapturedProcess.{0,300}TEST-MODEL-MANAGER\.py') {
+        throw 'The repair script does not use the safe stderr-capturing helper for Python unit tests.'
+    }
+    if ($repairSource -match '(?is)\$modelUnitTestOutput\s*=\s*@\(&\s*\$VenvPython.{0,300}TEST-MODEL-MANAGER\.py.{0,100}2>&1') {
+        throw 'The repair script still merges native Python stderr into a terminating PowerShell pipeline.'
+    }
 
     Write-Host '[PASS] Windows PowerShell 5.1 preserved .ps1 and argument paths containing spaces.' -ForegroundColor Green
-    Write-Host '[PASS] REPAIR-AND-RESUME.ps1 uses the tested invocation pattern.' -ForegroundColor Green
+    Write-Host '[PASS] Native stderr is captured safely under ErrorActionPreference=Stop.' -ForegroundColor Green
+    Write-Host '[PASS] REPAIR-AND-RESUME.ps1 uses the validated invocation patterns.' -ForegroundColor Green
 }
 finally {
     Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
