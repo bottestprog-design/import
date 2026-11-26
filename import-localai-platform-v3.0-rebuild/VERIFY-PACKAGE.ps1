@@ -16,6 +16,8 @@ if ($manifestLines.Count -lt 10) {
 
 $ok = 0
 $bad = 0
+$seenPaths = @{}
+$rootPrefix = [IO.Path]::GetFullPath($PSScriptRoot) + [IO.Path]::DirectorySeparatorChar
 
 foreach ($line in $manifestLines) {
     $parts = $line.Trim() -split '\s+', 2
@@ -28,7 +30,30 @@ foreach ($line in $manifestLines) {
     $expected = $parts[0].ToLowerInvariant()
     $relative = $parts[1].Trim()
     if ($relative.StartsWith('*')) { $relative = $relative.Substring(1) }
-    $path = Join-Path $PSScriptRoot $relative
+
+    # Manifest paths must be unique, relative, and confined to this package.
+    if ([string]::IsNullOrWhiteSpace($relative) -or
+        [IO.Path]::IsPathRooted($relative) -or
+        $relative -match '(^|[\\/])\.\.([\\/]|$)' -or
+        $relative.IndexOfAny([char[]]@('*','?')) -ge 0) {
+        Write-Host "INVALID MANIFEST PATH: $relative" -ForegroundColor Red
+        $bad++
+        continue
+    }
+    $normalized = $relative.Replace('/', [IO.Path]::DirectorySeparatorChar)
+    $pathKey = $normalized.ToLowerInvariant()
+    if ($seenPaths.ContainsKey($pathKey)) {
+        Write-Host "DUPLICATE MANIFEST PATH: $relative" -ForegroundColor Red
+        $bad++
+        continue
+    }
+    $seenPaths[$pathKey] = $true
+    $path = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot $normalized))
+    if (-not $path.StartsWith($rootPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+        Write-Host "MANIFEST PATH ESCAPES PACKAGE: $relative" -ForegroundColor Red
+        $bad++
+        continue
+    }
 
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
         Write-Host "MISSING: $relative" -ForegroundColor Red
@@ -47,7 +72,7 @@ foreach ($line in $manifestLines) {
 }
 
 # Parse every PowerShell file with the Windows PowerShell 5.1 parser.
-$powerShellFiles = @(Get-ChildItem -LiteralPath $PSScriptRoot -Filter '*.ps1' -File)
+$powerShellFiles = @(Get-ChildItem -LiteralPath $PSScriptRoot -Filter '*.ps1' -File -Recurse)
 foreach ($scriptFile in $powerShellFiles) {
     $tokens = $null
     $parseErrors = $null
@@ -63,7 +88,8 @@ foreach ($scriptFile in $powerShellFiles) {
             $bad++
         }
     } else {
-        Write-Host "POWERSHELL SYNTAX OK: $($scriptFile.Name)" -ForegroundColor Green
+        $relativeScript = $scriptFile.FullName.Substring($PSScriptRoot.Length).TrimStart([char[]]@([IO.Path]::DirectorySeparatorChar,[IO.Path]::AltDirectorySeparatorChar))
+        Write-Host "POWERSHELL SYNTAX OK: $relativeScript" -ForegroundColor Green
     }
 }
 

@@ -1,0 +1,73 @@
+name: LocalAI platform validation
+
+on:
+  push:
+    paths:
+      - "import-localai-platform-v3.0-rebuild/**"
+      - ".github/workflows/localai-platform-validation.yml"
+  pull_request:
+    paths:
+      - "import-localai-platform-v3.0-rebuild/**"
+      - ".github/workflows/localai-platform-validation.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-validation:
+    name: Windows PowerShell and Python checks
+    runs-on: windows-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: import-localai-platform-v3.0-rebuild
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install test-only dependency
+        run: python -m pip install --disable-pip-version-check "pydantic>=2,<3"
+
+      - name: Compile bundled Python sources
+        run: python -m compileall -q Filters WHISPER-MODEL-MANAGER.py TEST-MODEL-MANAGER.py TEST-FILTERS.py
+
+      - name: Run offline Whisper manager tests
+        run: python TEST-MODEL-MANAGER.py
+
+      - name: Run offline filter behavior tests
+        run: python TEST-FILTERS.py --filters-dir Filters
+
+      - name: Parse every PowerShell script with Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $files = @(Get-ChildItem -LiteralPath $PWD -Filter '*.ps1' -File -Recurse)
+          if ($files.Count -eq 0) { throw 'No PowerShell scripts were found.' }
+          $failed = @()
+          foreach ($file in $files) {
+              $tokens = $null
+              $errors = $null
+              $null = [System.Management.Automation.Language.Parser]::ParseFile($file.FullName, [ref]$tokens, [ref]$errors)
+              foreach ($errorItem in @($errors)) {
+                  $failed += ('{0}:{1}:{2} {3}' -f $file.FullName, $errorItem.Extent.StartLineNumber, $errorItem.Extent.StartColumnNumber, $errorItem.Message)
+              }
+          }
+          if ($failed.Count -gt 0) {
+              $failed | ForEach-Object { Write-Error $_ }
+              throw "PowerShell parser found $($failed.Count) error(s)."
+          }
+          Write-Host "Parsed $($files.Count) PowerShell files successfully."
+
+      - name: Run Windows process-launch regression test
+        shell: powershell
+        run: .\TEST-WINDOWS-PROCESS-LAUNCH.ps1
+
+      - name: Verify package hashes and launcher
+        shell: powershell
+        run: .\VERIFY-PACKAGE.ps1

@@ -27,7 +27,6 @@ if (Test-Path $Venv) {
 }
 Add-Check 'One-click launcher' (Test-Path (Join-Path $Platform 'LocalAI-Studio.bat')) (Join-Path $Platform 'LocalAI-Studio.bat')
 foreach($f in @('01-Trusted-Content-Guard.py','02-Accuracy-Thinking.py','03-Selective-Self-Review.py')) { $path=Join-Path $Platform ('Filters\'+$f); Add-Check "Filter $f" (Test-Path $path) $path }
-$log=Join-Path $Platform ('CHECK-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '.txt'); $results | Set-Content $log -Encoding UTF8
 $modelStatusPath=Join-Path $Platform 'MODEL-STATUS.json'
 if(Test-Path -LiteralPath $modelStatusPath -PathType Leaf){
     try{
@@ -39,5 +38,9 @@ if(Test-Path -LiteralPath $modelStatusPath -PathType Leaf){
     }catch{Add-Check 'Model manager status' $false $_.Exception.Message}
 }else{Add-Check 'Model manager status' $false 'MODEL-STATUS.json not found. Run LocalAI-Studio.bat to provision the models.'}
 Write-Host ([Environment]::NewLine + "Report: $log") -ForegroundColor Cyan
-if(@($results|Where-Object{$_ -match '^[FAIL]'}).Count -gt 0){exit 1}
+$failed = @($results | Where-Object { $_.StartsWith('[FAIL] ', [StringComparison]::Ordinal) })
+$log=Join-Path $Platform ('CHECK-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '.txt')
+$results | Set-Content -LiteralPath $log -Encoding UTF8
+Write-Host ([Environment]::NewLine + "Report: $log") -ForegroundColor Cyan
+if ($failed.Count -gt 0) { exit 1 }
 exit 0
