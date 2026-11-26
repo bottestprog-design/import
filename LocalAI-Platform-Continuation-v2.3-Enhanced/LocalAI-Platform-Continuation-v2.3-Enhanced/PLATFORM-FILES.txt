@@ -1,0 +1,26 @@
+Installed target paths (created by INSTALL-PLATFORM.bat):
+D:\LocalAI\ENGINE-STATUS.txt
+D:\LocalAI\FULL-STATUS.txt
+D:\LocalAI\MODEL-STORE-PATH.txt (when D:\LocalAI\Models is detected)
+D:\LocalAI\Platform\.venv\Scripts\python.exe
+D:\LocalAI\Platform\.venv\Scripts\open-webui.exe
+D:\LocalAI\Platform\ffmpeg-path.txt (if FFmpeg is available)
+D:\LocalAI\Platform\Filters\01-Trusted-Content-Guard.py
+D:\LocalAI\Platform\Filters\02-Accuracy-Thinking.py
+D:\LocalAI\Platform\Filters\03-Selective-Self-Review.py
+D:\LocalAI\Platform\Data\webui.db (created on first start)
+D:\LocalAI\Platform\Secrets\webui_secret_key.txt
+D:\LocalAI\Platform\PLATFORM-STATUS.txt
+D:\LocalAI\Platform\Logs\
+D:\LocalAI\Platform\START-CHAT.bat
+D:\LocalAI\Platform\STOP-CHAT.bat
+D:\LocalAI\Platform\VERIFY-MODEL.bat
+D:\LocalAI\Platform\CHECK-LOCALAI.bat
+D:\LocalAI\Platform\IMPORT-FILTERS.bat
+
+D:\LocalAI\Platform\DASHBOARD-SERVER.py
+D:\LocalAI\Platform\TEST-DASHBOARD.py
+D:\LocalAI\Platform\START-DASHBOARD.bat
+D:\LocalAI\Platform\MODEL-PROFILES-AR.md
+D:\LocalAI\Platform\ADD-FAST-MODEL.ps1 (optional; explicit confirmation required)
+D:\LocalAI\Platform\V2.3-ADDENDUM-AR.md
