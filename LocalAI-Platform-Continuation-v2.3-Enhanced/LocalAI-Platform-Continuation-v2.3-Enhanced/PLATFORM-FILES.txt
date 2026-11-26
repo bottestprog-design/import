@@ -24,3 +24,6 @@ D:\LocalAI\Platform\START-DASHBOARD.bat
 D:\LocalAI\Platform\MODEL-PROFILES-AR.md
 D:\LocalAI\Platform\ADD-FAST-MODEL.ps1 (optional; explicit confirmation required)
 D:\LocalAI\Platform\V2.3-ADDENDUM-AR.md
+D:\LocalAI\Platform\LOCALAI-STUDIO-THEME.css
+D:\LocalAI\Platform\RESTORE-OPENWEBUI-STYLE.ps1
+D:\LocalAI\Platform\RESTORE-OPENWEBUI-STYLE.bat

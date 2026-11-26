@@ -1,4 +1,4 @@
-﻿# استكمال Local AI — بدون إعادة تنزيل النموذج
+# استكمال Local AI — بدون إعادة تنزيل النموذج
 
 ## ما كشفه تقرير جهازك
 
@@ -103,3 +103,7 @@
 - رسائل الانتظار أقل تكرارًا ولا تقتل العملية الجارية.
 - إضافة Qwen 3.5 4B اختيارية وتحتاج موافقة صريحة؛ نموذج 9B الموجود لا يتغير.
 - راجع MODEL-PROFILES-AR.md وV2.3-ADDENDUM-AR.md.
+
+
+### تحسين المظهر v2.3.1
+يُحمّل ملف `LOCALAI-STUDIO-THEME.css` من نقطة `/static/custom.css` بعد جاهزية الخادم. يحفظ المشغّل النسخة الأصلية في `D:\LocalAI\Platform\Backups\OpenWebUI\custom.css.original`. للتراجع شغّل `RESTORE-OPENWEBUI-STYLE.bat` ثم أعد تشغيل Open WebUI. لا تتغير ملفات JavaScript أو الشعارات أو بيانات المحادثات.

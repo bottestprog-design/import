@@ -27,6 +27,33 @@ $Python = Join-Path $Platform '.venv\Scripts\python.exe'
 $OpenWebUI = Join-Path $Platform '.venv\Scripts\open-webui.exe'
 $SecretPath = Join-Path $Platform 'Secrets\webui_secret_key.txt'
 $FfmpegPathFile = Join-Path $Platform 'ffmpeg-path.txt'
+
+function Apply-LocalAITheme {
+    $themeSource = Join-Path $Platform 'LOCALAI-STUDIO-THEME.css'
+    if (-not (Test-Path -LiteralPath $themeSource -PathType Leaf)) { return }
+    try {
+        # Locate the installed CSS hook without importing Open WebUI modules.
+        $probe = & $Python -c 'import importlib.util,pathlib; s=importlib.util.find_spec("open_webui"); print(str(pathlib.Path(s.origin).parent / "static" / "custom.css") if s and s.origin else "")'
+        if ($LASTEXITCODE -ne 0) { throw 'Could not resolve Open WebUI static asset directory.' }
+        $customCss = [string]($probe | Select-Object -Last 1)
+        $customCss = $customCss.Trim()
+        if (-not $customCss) { throw 'Open WebUI static custom.css path was not found.' }
+        $staticDirectory = Split-Path -Parent $customCss
+        if (-not (Test-Path -LiteralPath $staticDirectory -PathType Container)) { throw "Static directory is missing: $staticDirectory" }
+        $backup = Join-Path $Platform 'Backups\OpenWebUI\custom.css.original'
+        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $backup) | Out-Null
+        if (-not (Test-Path -LiteralPath $backup -PathType Leaf)) {
+            if (Test-Path -LiteralPath $customCss -PathType Leaf) { Copy-Item -LiteralPath $customCss -Destination $backup -Force }
+            else { [System.IO.File]::WriteAllText($backup, '') }
+        }
+        # Apply after /ready, after the package has initialized its static directory.
+        Copy-Item -LiteralPath $themeSource -Destination $customCss -Force
+        Write-Host '[OK] LocalAI Studio CSS theme applied; original backup preserved.' -ForegroundColor Green
+    } catch {
+        Write-Host "LocalAI Studio theme was not applied: $($_.Exception.Message)" -ForegroundColor Yellow
+    }
+}
+
 $Logs = Join-Path $Platform 'Logs'
 New-Item -ItemType Directory -Force -Path $Logs | Out-Null
 if (-not (Test-Path $OpenWebUI)) { throw 'Open WebUI is not installed. Run INSTALL-PLATFORM.bat from the continuation package.' }
@@ -119,6 +146,7 @@ if (-not $ready) {
     if (Test-Path $stdout) { Get-Content $stdout -Tail 30 }
     throw "Readiness timeout. Logs: $stdout and $stderr"
 }
+Apply-LocalAITheme
 Write-Host 'Open WebUI / LocalAI Studio is READY at http://127.0.0.1:8080' -ForegroundColor Green
 Write-Host 'Leave this window open while using the chat. Press Ctrl+C only when you want to stop the foreground launcher (the WebUI process is separate).' -ForegroundColor Yellow
 Start-Process 'http://127.0.0.1:8080'

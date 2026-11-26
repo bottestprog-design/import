@@ -124,7 +124,7 @@ Write-Host ('Open WebUI package state: Version={0}; CoreReady={1}; AudioReady={2
 if ($state.Installed -and $state.AudioReady) {
     Write-Host 'Open WebUI 0.13.5 and audio imports are already installed. No package reinstall is needed.' -ForegroundColor Green
     New-Item -ItemType Directory -Force -Path $Platform | Out-Null
-    foreach ($extraName in @('DASHBOARD-SERVER.py','TEST-DASHBOARD.py','START-DASHBOARD.bat','ADD-FAST-MODEL.ps1','ADD-FAST-MODEL.bat','MODEL-PROFILES-AR.md','V2.3-ADDENDUM-AR.md')) {
+    foreach ($extraName in @('DASHBOARD-SERVER.py','TEST-DASHBOARD.py','START-DASHBOARD.bat','ADD-FAST-MODEL.ps1','ADD-FAST-MODEL.bat','MODEL-PROFILES-AR.md','V2.3-ADDENDUM-AR.md','LOCALAI-STUDIO-THEME.css','RESTORE-OPENWEBUI-STYLE.ps1','RESTORE-OPENWEBUI-STYLE.bat')) {
         $extraSource = Join-Path $PSScriptRoot $extraName
         if (Test-Path -LiteralPath $extraSource -PathType Leaf) { Copy-Item -LiteralPath $extraSource -Destination $Platform -Force }
     }

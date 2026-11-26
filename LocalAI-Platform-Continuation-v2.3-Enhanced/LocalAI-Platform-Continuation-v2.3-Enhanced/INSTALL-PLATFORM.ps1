@@ -322,7 +322,7 @@ try {
     Copy-Item (Join-Path $PSScriptRoot 'IMPORT-FILTERS.ps1') (Join-Path $Platform 'IMPORT-FILTERS.ps1') -Force
     Copy-Item (Join-Path $PSScriptRoot 'FILTER-IMPORT-GUIDE-AR.md') (Join-Path $Platform 'FILTER-IMPORT-GUIDE-AR.md') -Force
     Copy-Item (Join-Path $PSScriptRoot 'README-AR.md') (Join-Path $Platform 'README-AR-INTEGRATION.md') -Force
-    foreach ($extraName in @('DASHBOARD-SERVER.py','TEST-DASHBOARD.py','START-DASHBOARD.bat','ADD-FAST-MODEL.ps1','ADD-FAST-MODEL.bat','MODEL-PROFILES-AR.md','V2.3-ADDENDUM-AR.md')) {
+    foreach ($extraName in @('DASHBOARD-SERVER.py','TEST-DASHBOARD.py','START-DASHBOARD.bat','ADD-FAST-MODEL.ps1','ADD-FAST-MODEL.bat','MODEL-PROFILES-AR.md','V2.3-ADDENDUM-AR.md','LOCALAI-STUDIO-THEME.css','RESTORE-OPENWEBUI-STYLE.ps1','RESTORE-OPENWEBUI-STYLE.bat')) {
         $extraSource = Join-Path $PSScriptRoot $extraName
         if (Test-Path -LiteralPath $extraSource -PathType Leaf) { Copy-Item -LiteralPath $extraSource -Destination $Platform -Force }
     }
