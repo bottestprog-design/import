@@ -335,7 +335,11 @@ function Ensure-QwenModel {
     $script:Status.ollama.tag = $selected
     if ($model) { $script:Status.ollama.size_bytes = [long]$model.size }
     if ($script:Status.ollama.source -like 'Downloaded*') { $script:Status.ollama.status = 'ready_downloaded' }
-    else { $script:Status.ollama.status = 'reafunction Ensure-WhisperModel {
+    else { $script:Status.ollama.status = 'ready_imported' }
+    Write-Host "[OK] Qwen model is ready: $selected." -ForegroundColor Green
+}
+
+function Ensure-WhisperModel {
     $modelId = [string]$script:Config.whisper.repository
     $modelSize = [string]$script:Config.whisper.model_size
     $relative = [string]$script:Config.whisper.cache_relative_path
@@ -388,9 +392,6 @@ function Ensure-QwenModel {
     $script:Status.whisper.cache_dir = $modelDir
     $script:Warnings.Add($warning)
     Write-Host "[WARN] $warning" -ForegroundColor Yellow
-    if ($RequireWhisper) { throw $warning }
-}
-e-Host "[WARN] $warning" -ForegroundColor Yellow
     if ($RequireWhisper) { throw $warning }
 }
 
