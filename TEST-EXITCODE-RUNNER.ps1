@@ -32,7 +32,7 @@ try{
     Write-Host 'EXITCODE_RUNNER_TESTS: SUCCESS' -ForegroundColor Green
 }catch{
     $failed=$true
-    Write-Host ("EXITCODE_RUNNER_TESTS: FAILED — " + $_.Exception.Message) -ForegroundColor Red
+    Write-Host ("EXITCODE_RUNNER_TESTS: FAILED - " + $_.Exception.Message) -ForegroundColor Red
 }finally{
     try{Remove-Item -LiteralPath $temp -Recurse -Force -ErrorAction SilentlyContinue}catch{}
 }

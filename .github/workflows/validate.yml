@@ -17,6 +17,12 @@ jobs:
       - name: Check out exact source
         uses: actions/checkout@v4
 
+      - name: Restore exact committed bytes for SHA-256 checks
+        run: |
+          git config core.autocrlf false
+          git -c core.autocrlf=false reset --hard HEAD
+        shell: powershell
+
       - name: Install Python for offline filter tests
         uses: actions/setup-python@v5
         with:

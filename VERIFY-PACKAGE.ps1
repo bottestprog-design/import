@@ -47,7 +47,9 @@ foreach($line in $lines){
 }
 
 # Reject files that are not in the integrity manifest.
-$actualFiles=@(Get-ChildItem -LiteralPath $root -Recurse -File -Force | Where-Object {$_.FullName -ne $manifestPath})
+$actualFiles=@(Get-ChildItem -LiteralPath $root -Recurse -File -Force | Where-Object {
+    $_.FullName -ne $manifestPath -and $_.FullName -notmatch '(?i)[\\/]\.git[\\/]'
+})
 foreach($file in $actualFiles){
     $relative=$file.FullName.Substring($root.Length).TrimStart('\').Replace('\','/')
     if(-not $expected.ContainsKey($relative)){

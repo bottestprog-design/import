@@ -30,7 +30,9 @@ foreach ($manifestLine in $manifestLines) {
     if ($actualHash -ne $expectedHash) { throw "Package integrity mismatch: $relativePath. Expected $expectedHash; actual $actualHash. Extract the ZIP again." }
     $expectedPackageFiles[$relativePath] = $true
 }
-$actualPackageFiles = @(Get-ChildItem -LiteralPath $PSScriptRoot -Recurse -File -Force | Where-Object { $_.FullName -ne $manifestPath })
+$actualPackageFiles = @(Get-ChildItem -LiteralPath $PSScriptRoot -Recurse -File -Force | Where-Object {
+    $_.FullName -ne $manifestPath -and $_.FullName -notmatch '(?i)[\\/]\.git[\\/]'
+})
 foreach ($file in $actualPackageFiles) {
     $relative = $file.FullName.Substring($packageRoot.Length).Replace('\','/')
     if (-not $expectedPackageFiles.ContainsKey($relative)) { throw "Unlisted file found in package: $relative. Re-download the complete package." }

@@ -3,7 +3,7 @@ $Root='D:\LocalAI'; $Platform=Join-Path $Root 'Platform'; $Venv=Join-Path $Platf
 $results = New-Object System.Collections.Generic.List[string]
 function Add-Check([string]$Name,[bool]$Ok,[string]$Detail) {
     $state=if($Ok){'PASS'}else{'FAIL'}
-    $line="[$state] $Name — $Detail"
+    $line="[$state] $Name - $Detail"
     $null=$results.Add($line)
     if($Ok){Write-Host $line -ForegroundColor Green}else{Write-Host $line -ForegroundColor Red}
 }
