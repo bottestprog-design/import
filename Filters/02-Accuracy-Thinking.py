@@ -1,7 +1,7 @@
 """
 title: Local Qwen - Accuracy and Thinking
 author: Local AI setup bundle
-version: 2.1.0
+version: 2.4.0
 required_open_webui_version: 0.13.5
 description: Adds accuracy guidance and enables native Boolean thinking for local Qwen 3.5.
 """

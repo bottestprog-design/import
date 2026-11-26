@@ -54,8 +54,25 @@ namespace LocalAI {
 $Warnings = New-Object System.Collections.Generic.List[string]
 $Failures = New-Object System.Collections.Generic.List[string]
 function Quote-Arg([string]$Value) {
-    if ($null -eq $Value) { return '""' }
-    return '"' + $Value.Replace('"','\"') + '"'
+    if ($null -eq $Value -or $Value.Length -eq 0) { return '""' }
+    if ($Value -notmatch '[\s"]') { return $Value }
+    $builder = New-Object System.Text.StringBuilder
+    [void]$builder.Append('"')
+    $slashes = 0
+    foreach ($character in $Value.ToCharArray()) {
+        if ([int]$character -eq 92) { $slashes++; continue }
+        if ([int]$character -eq 34) {
+            [void]$builder.Append(('\' * (2 * $slashes + 1)))
+            [void]$builder.Append('"')
+            $slashes = 0
+            continue
+        }
+        if ($slashes -gt 0) { [void]$builder.Append(('\' * $slashes)); $slashes = 0 }
+        [void]$builder.Append($character)
+    }
+    if ($slashes -gt 0) { [void]$builder.Append(('\' * (2 * $slashes))) }
+    [void]$builder.Append('"')
+    return $builder.ToString()
 }
 function Read-AppendedLogText([string]$Path,[long]$Offset) {
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return [pscustomobject]@{ Text=''; Offset=$Offset } }
@@ -85,18 +102,36 @@ function Invoke-NativeLogged {
     $id = [guid]::NewGuid().ToString('N')
     $outFile = Join-Path $script:Logs ($id + '.stdout.log')
     $errFile = Join-Path $script:Logs ($id + '.stderr.log')
-    $argLine = (($Arguments | ForEach-Object { Quote-Arg ([string]$_) }) -join ' ')
-    Write-Host "`n>>> $Label" -ForegroundColor Cyan
-    Write-Host "Live logs: $outFile | $errFile" -ForegroundColor DarkGray
-    $proc = Start-Process -FilePath $Executable -ArgumentList $argLine -PassThru -NoNewWindow `
-        -RedirectStandardOutput $outFile -RedirectStandardError $errFile -ErrorAction Stop
-    $outOffset = [long]0; $errOffset = [long]0
-    $lastNotice = Get-Date; $lastOutput = Get-Date
-    while (-not $proc.HasExited) {
-        Start-Sleep -Seconds 2; $proc.Refresh()
+    $exitFile = Join-Path $script:Logs ($id + '.exitcode.txt')
+    $runnerOut = $outFile + '.runner.log'
+    $runnerErr = $outFile + '.runner-error.log'
+    $runnerScript = Join-Path $PSScriptRoot 'RUN-NATIVE-WITH-EXITCODE.ps1'
+    if (-not (Test-Path -LiteralPath $runnerScript -PathType Leaf)) { throw 'RUN-NATIVE-WITH-EXITCODE.ps1 is missing from this complete package.' }
+    $powershell = Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
+    if (-not (Test-Path -LiteralPath $powershell -PathType Leaf)) { throw 'Windows PowerShell executable was not found.' }
+    $json = ConvertTo-Json -InputObject ([pscustomobject]@{ items = [string[]]$Arguments }) -Compress -Depth 10
+    $argumentsBase64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($json))
+    $runnerArguments = @('-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',$runnerScript,
+        '-Executable',$Executable,'-ArgumentsBase64',$argumentsBase64,
+        '-StdOutPath',$outFile,'-StdErrPath',$errFile,'-ExitCodePath',$exitFile)
+    $argLine = (($runnerArguments | ForEach-Object { Quote-Arg ([string]$_) }) -join ' ')
+    Write-Host ''
+    Write-Host (">>> " + $Label) -ForegroundColor Cyan
+    Write-Host ("Live logs: " + $outFile + " | " + $errFile) -ForegroundColor DarkGray
+    $proc = Start-Process -FilePath $powershell -ArgumentList $argLine -PassThru -NoNewWindow -RedirectStandardOutput $runnerOut -RedirectStandardError $runnerErr -ErrorAction Stop
+    $outOffset = [long]0
+    $errOffset = [long]0
+    $lastNotice = Get-Date
+    $lastOutput = Get-Date
+    while ($true) {
+        $proc.Refresh()
+        if ($proc.HasExited) { break }
+        Start-Sleep -Seconds 2
+        $proc.Refresh()
         $od = Read-AppendedLogText -Path $outFile -Offset $outOffset
         $ed = Read-AppendedLogText -Path $errFile -Offset $errOffset
-        $outOffset = $od.Offset; $errOffset = $ed.Offset
+        $outOffset = $od.Offset
+        $errOffset = $ed.Offset
         if ($od.Text) { Write-LogDelta -Text $od.Text -Color Gray; $lastOutput = Get-Date }
         if ($ed.Text) { Write-LogDelta -Text $ed.Text -Color DarkYellow; $lastOutput = Get-Date }
         if (-not $proc.HasExited -and ((Get-Date)-$lastNotice).TotalSeconds -ge $NoticeSeconds) {
@@ -104,19 +139,27 @@ function Invoke-NativeLogged {
             $eb = if (Test-Path $errFile) { (Get-Item $errFile).Length } else { 0 }
             $quiet = [int]((Get-Date)-$lastOutput).TotalSeconds
             Write-Host ("$Label is still running (PID {0}); stdout {1:N0} KB, stderr {2:N0} KB; last output {3}s ago." -f $proc.Id,($ob/1KB),($eb/1KB),$quiet) -ForegroundColor Yellow
-            Write-Host "Logs: $outFile | $errFile" -ForegroundColor DarkGray
+            Write-Host ("Logs: " + $outFile + " | " + $errFile) -ForegroundColor DarkGray
             $lastNotice = Get-Date
         }
     }
     $proc.WaitForExit()
+    $proc.Refresh()
     $od = Read-AppendedLogText -Path $outFile -Offset $outOffset
     $ed = Read-AppendedLogText -Path $errFile -Offset $errOffset
-    Write-LogDelta -Text $od.Text -Color Gray; Write-LogDelta -Text $ed.Text -Color DarkYellow
-    $stdout = if (Test-Path $outFile) { [IO.File]::ReadAllText($outFile) } else { '' }
-    $stderr = if (Test-Path $errFile) { [IO.File]::ReadAllText($errFile) } else { '' }
-    $exitCode = [int]$proc.ExitCode
-    if ($exitCode -eq 0) { Write-Host "[OK] $Label completed successfully." -ForegroundColor Green }
-    else { Write-Host "[FAIL] $Label exited with code $exitCode. See $outFile and $errFile" -ForegroundColor Red }
+    Write-LogDelta -Text $od.Text -Color Gray
+    Write-LogDelta -Text $ed.Text -Color DarkYellow
+    $stdout = if (Test-Path -LiteralPath $outFile) { [IO.File]::ReadAllText($outFile) } else { '' }
+    $stderr = if (Test-Path -LiteralPath $errFile) { [IO.File]::ReadAllText($errFile) } else { '' }
+    if (-not (Test-Path -LiteralPath $exitFile -PathType Leaf)) {
+        $runnerFailure = if (Test-Path -LiteralPath $runnerErr) { [IO.File]::ReadAllText($runnerErr) } else { '' }
+        throw "$Label runner ended without an exit-code result. Logs: $outFile | $errFile | $runnerFailure"
+    }
+    $exitText = ([IO.File]::ReadAllText($exitFile)).Trim()
+    $exitCode = 0
+    if (-not [int]::TryParse($exitText,[ref]$exitCode)) { throw "$Label produced invalid exit-code result '$exitText'. Result: $exitFile" }
+    if ($exitCode -eq 0) { Write-Host ("[OK] " + $Label + " completed successfully.") -ForegroundColor Green }
+    else { Write-Host ("[FAIL] " + $Label + " exited with code " + $exitCode + ". See " + $outFile + " and " + $errFile) -ForegroundColor Red }
     return [pscustomobject]@{ ExitCode=$exitCode; StdOut=$stdout; StdErr=$stderr; StdOutPath=$outFile; StdErrPath=$errFile }
 }
 function Refresh-UserPath {
@@ -318,6 +361,10 @@ try {
     Copy-Item (Join-Path $PSScriptRoot 'IMPORT-FILTERS.bat') (Join-Path $Platform 'IMPORT-FILTERS.bat') -Force
     Copy-Item (Join-Path $PSScriptRoot 'IMPORT-FILTERS.ps1') (Join-Path $Platform 'IMPORT-FILTERS.ps1') -Force
     Copy-Item (Join-Path $PSScriptRoot 'FILTER-IMPORT-GUIDE-AR.md') (Join-Path $Platform 'FILTER-IMPORT-GUIDE-AR.md') -Force
+    Copy-Item (Join-Path $PSScriptRoot 'DIAGNOSTICS.ps1') (Join-Path $Platform 'DIAGNOSTICS.ps1') -Force
+    Copy-Item (Join-Path $PSScriptRoot 'DIAGNOSTICS.bat') (Join-Path $Platform 'DIAGNOSTICS.bat') -Force
+    Copy-Item (Join-Path $PSScriptRoot 'BACKUP-LOCALAI.ps1') (Join-Path $Platform 'BACKUP-LOCALAI.ps1') -Force
+    Copy-Item (Join-Path $PSScriptRoot 'BACKUP-LOCALAI.bat') (Join-Path $Platform 'BACKUP-LOCALAI.bat') -Force
     Copy-Item (Join-Path $PSScriptRoot 'README-AR.md') (Join-Path $Platform 'README-AR-INTEGRATION.md') -Force
 
     $filterTest = Invoke-NativeLogged -Executable $VenvPython -Arguments @((Join-Path $Platform 'TEST-FILTERS.py'),'--filters-dir',$FilterDir) -Label 'Run filter syntax and behavior tests'

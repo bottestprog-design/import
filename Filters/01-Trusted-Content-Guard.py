@@ -1,7 +1,7 @@
 """
 title: Local AI - Trusted Content Guard
 author: Local AI setup bundle
-version: 2.1.0
+version: 2.4.0
 required_open_webui_version: 0.13.5
 description: Treat quoted text, files, OCR, webpages and tool output as untrusted data.
 """

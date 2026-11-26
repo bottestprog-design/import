@@ -1,25 +1,14 @@
-﻿# ابدأ من هنا — Local AI Platform Continuation
+# ابدأ هنا — LocalAI Studio Complete v2.4.0
 
-## قبل التشغيل
-- النموذج Qwen موجود بالفعل في Ollama. لا تستخدم أي مثبت قديم ولا تشغّل Recovery مرة أخرى.
-- شغّل تطبيق Ollama من قائمة Start وانتظر أن يعمل `http://127.0.0.1:11434`.
-- صِل اللابتوب بالشاحن. المثبت ومشغل الشات يمنعان سكون النظام مؤقتًا أثناء عملهما فقط؛ يمكن للشاشة أن تنطفئ.
+1. تأكد أن Ollama يعمل على http://127.0.0.1:11434 وأن نموذج Qwen الموجود ظاهر في /api/tags.
+2. فك ضغط الحزمة الكاملة إلى مجلد جديد. لا تستخدم مجلد v2.3.1 الذي فشل تطبيق إصلاحه.
+3. شغّل ONE-CLICK-SETUP.bat فقط.
+4. سيفحص المشغّل جميع بصمات الحزمة وصياغة ملفات PowerShell، ثم يختبر قراءة رموز الخروج 0 و37 قبل التثبيت.
+5. بعد اكتمال التثبيت شغّل D:\LocalAI\Platform\START-CHAT.bat.
+6. افتح http://127.0.0.1:8080 وأنشئ حساب المسؤول الأول.
+7. شغّل D:\LocalAI\Platform\VERIFY-MODEL.bat لاختبار رد فعلي من Qwen.
+8. استورد الفلاتر عبر D:\LocalAI\Platform\IMPORT-FILTERS.bat بعد إنشاء Admin API Key.
 
-## التثبيت
-1. فك ضغط الحزمة بالكامل في مجلد جديد.
-2. شغّل `VERIFY-PACKAGE.bat`. يجب أن تظهر `PACKAGE_INTEGRITY: SUCCESS`.
-3. شغّل `RUN-REPAIR.bat` واترك النافذة مفتوحة. تنزيل البرامج وملف Whisper يحتاجان اتصال إنترنت.
-4. اقرأ `D:\LocalAI\Platform\PLATFORM-STATUS.txt` وسجل `D:\LocalAI\Logs` بعد انتهاء التثبيت.
+**لا تحذف D:\LocalAI\Platform\.venv ولا D:\LocalAI\Models.** إذا كانت البيئة الحالية صالحة سيعيد المثبّت استخدامها. وإذا كانت غير صالحة فسيحتفظ بها باسم احتياطي قبل إنشاء بيئة بديلة.
 
-## التشغيل بعد التثبيت
-1. شغّل `D:\LocalAI\Platform\START-CHAT.bat`.
-2. افتح `http://127.0.0.1:8080` وأنشئ حساب المسؤول الأول.
-3. شغّل `D:\LocalAI\Platform\VERIFY-MODEL.bat` لاختبار رد فعلي من Qwen دون تنزيله مجددًا.
-4. أنشئ Admin API Key ثم شغّل `D:\LocalAI\Platform\IMPORT-FILTERS.bat` لإضافة الفلاتر الثلاثة. المفتاح يُدخل مخفيًا ولا يُحفظ في ملفات الحزمة.
-
-## بعد التثبيت
-- `CHECK-LOCALAI.bat`: فحص المحرك والمنصة والصوت والفلاتر.
-- `STOP-CHAT.bat`: يوقف خادم Open WebUI الذي بدأه المشغل فقط؛ لا يوقف Ollama.
-- لا تحذف `D:\LocalAI\Models` ولا تشغّل مثبت المحرك القديم.
-
-راجع `README-AR.md` للتفاصيل، وإعداد Whisper وDDGS والصوت والخصوصية.
+استخدم DIAGNOSTICS.bat للفحص وBACKUP-LOCALAI.bat للنسخ الاحتياطي. راجع README-AR.md للتفاصيل.

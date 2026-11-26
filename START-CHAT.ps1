@@ -44,7 +44,7 @@ $env:WEBUI_SECRET_KEY = (Get-Content -LiteralPath $SecretPath -Raw).Trim()
 $env:OLLAMA_BASE_URL = 'http://127.0.0.1:11434'
 $env:ENABLE_OLLAMA_API = 'true'
 $env:DEFAULT_MODELS = $ModelId
-$env:DEFAULT_MODEL_METADATA = '{"capabilities":{"vision":true,"web_search":true}}'
+$env:DEFAULT_MODEL_METADATA = '{"capabilities":{"web_search":true}}'
 $env:DEFAULT_LOCALE = 'ar'
 $env:WEBUI_URL = 'http://127.0.0.1:8080'
 $env:ENABLE_WEB_SEARCH = 'true'
@@ -101,7 +101,7 @@ for ($i=0; $i -lt 180; $i++) {
         Write-Host 'Open WebUI exited during startup. Last log lines:' -ForegroundColor Red
         if (Test-Path $stderr) { Get-Content $stderr -Tail 60 }
         if (Test-Path $stdout) { Get-Content $stdout -Tail 30 }
-        throw "Open WebUI exited with code $($process.ExitCode). Logs: $stdout and $stderr"
+        throw "Open WebUI exited during startup. Logs: $stdout and $stderr"
     }
     try { Invoke-RestMethod 'http://127.0.0.1:8080/ready' -TimeoutSec 2 | Out-Null; $ready=$true; break } catch {}
     if (($i % 15) -eq 0) { Write-Host 'Waiting for first startup/database migrations...' -ForegroundColor Yellow }
@@ -116,7 +116,7 @@ Write-Host 'Open WebUI is READY at http://127.0.0.1:8080' -ForegroundColor Green
 Write-Host 'Leave this window open while using the chat. Press Ctrl+C only when you want to stop the foreground launcher (the WebUI process is separate).' -ForegroundColor Yellow
 Start-Process 'http://127.0.0.1:8080'
 while (-not $process.HasExited) { Start-Sleep -Seconds 3; $process.Refresh() }
-Write-Host "Open WebUI exited ($($process.ExitCode)). Logs: $stdout / $stderr" -ForegroundColor Yellow
+Write-Host "Open WebUI process exited. Review logs: $stdout / $stderr" -ForegroundColor Yellow
 }
 finally {
     if ($script:KeepAwakeEnabled -and ('LocalAI.PowerManagement' -as [type])) {

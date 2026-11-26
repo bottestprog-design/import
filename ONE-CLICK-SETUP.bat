@@ -2,19 +2,12 @@
 setlocal
 chcp 65001 >nul
 cd /d "%~dp0"
-title LocalAI Studio Complete v2.3.1
+title LocalAI Studio Complete v2.4.0
 echo ============================================================
-echo LOCALAI STUDIO COMPLETE v2.3.1
-echo Dedicated PowerShell 5.1 process exit-code repair.
-echo Reuses existing Ollama, Qwen and D:\LocalAI\Platform\.venv.
-echo Does not reinstall Ollama, pull Qwen, or delete model files.
+echo LOCALAI STUDIO COMPLETE v2.4.0
+echo Uses existing Ollama, Qwen and project Python where valid.
+echo Does not reinstall Ollama, download Qwen, or delete model files.
+echo Verifies all files and PowerShell syntax before starting.
 echo ============================================================
-powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0FIX-EXITCODE-V2.3.1.ps1"
-if errorlevel 1 goto :failed
 call "%~dp0RUN-REPAIR.bat"
 exit /b %ERRORLEVEL%
-:failed
-echo.
-echo HOTFIX FAILED. Setup was not started. Keep the folder intact.
-pause
-exit /b 1

@@ -1,7 +1,7 @@
 """
 title: Local Qwen - Selective Self Review
 author: Local AI setup bundle
-version: 2.2.0
+version: 2.4.0
 required_open_webui_version: 0.13.5
 description: Reviews selected calculations, code and audit answers with a safe local second pass.
 """
