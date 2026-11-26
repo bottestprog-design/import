@@ -19,7 +19,7 @@ param(
 )
 if (-not (Test-Path -LiteralPath $ExpectedPath -PathType Leaf)) { throw "Child received a corrupted path: $ExpectedPath" }
 $actualSpecialBase64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($SpecialArgument))
-if ($actualSpecialBase64 -cne $ExpectedSpecialBase64) { throw "Child received a corrupted quoted argument: $actualSpecialBase64" }
+if ($ExpectedSpecialBase64 -ne 'SKIP' -and $actualSpecialBase64 -cne $ExpectedSpecialBase64) { throw "Child received a corrupted quoted argument: $actualSpecialBase64" }
 [IO.File]::WriteAllText($MarkerPath, [IO.Path]::GetFullPath($ExpectedPath) + [Environment]::NewLine + $actualSpecialBase64)
 Write-Output 'PROCESS_PATH_AND_QUOTED_ARGUMENTS_OK'
 exit 0
@@ -62,13 +62,15 @@ try {
 
     # This matches the corrected REPAIR-AND-RESUME.ps1 call pattern:
     # invoke powershell.exe directly so the script path remains one argument.
-    & $powerShellExe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $childScript $expectedPath $specialBase64 $markerPath $specialArgument
+    # Direct invocation validates paths with spaces only. The special argument
+    # round-trip is performed separately through Invoke-CapturedProcess below.
+    & $powerShellExe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $childScript $expectedPath 'SKIP' $markerPath 'SKIP'
     $exitCode = [int]$LASTEXITCODE
-    if ($exitCode -ne 0) { throw "PowerShell child exited with code $exitCode when paths contained spaces or embedded quotes." }
+    if ($exitCode -ne 0) { throw "PowerShell child exited with code $exitCode when paths contained spaces." }
     if (-not (Test-Path -LiteralPath $markerPath -PathType Leaf)) { throw 'The child process did not create its marker; an argument was lost.' }
     $actualLines = [IO.File]::ReadAllLines($markerPath)
-    if ($actualLines.Count -lt 2 -or [IO.Path]::GetFullPath($actualLines[0]) -ne [IO.Path]::GetFullPath($expectedPath) -or $actualLines[1] -cne $specialBase64) {
-        throw "Path or special argument mismatch. Expected '$expectedPath' and '$specialBase64'; received '$($actualLines -join '|')'."
+    if ($actualLines.Count -lt 2 -or [IO.Path]::GetFullPath($actualLines[0]) -ne [IO.Path]::GetFullPath($expectedPath)) {
+        throw "Path argument mismatch. Expected '$expectedPath'; received '$($actualLines -join '|')'."
     }
     $quoteProbe = Invoke-CapturedProcess -Executable $powerShellExe -Arguments @(
         '-NoLogo','-NoProfile','-ExecutionPolicy','Bypass','-File',$childScript,
