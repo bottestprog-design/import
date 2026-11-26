@@ -19,9 +19,11 @@ function Replace-Once([string]$RelativePath,[string]$OldText,[string]$NewText,[s
     $path = Join-Path $root $RelativePath
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Required patch target missing: $RelativePath" }
     $content = [IO.File]::ReadAllText($path)
-    $normalized = [regex]::Replace($content, "\r\n", "\n")
-    $oldNormalized = [regex]::Replace($OldText, "\r\n", "\n")
-    $newNormalized = [regex]::Replace($NewText, "\r\n", "\n")
+    $crlf = ([string][char]13) + ([string][char]10)
+    $lf = [string][char]10
+    $normalized = $content.Replace($crlf,$lf).Replace([string][char]13,$lf)
+    $oldNormalized = $OldText.Replace($crlf,$lf).Replace([string][char]13,$lf)
+    $newNormalized = $NewText.Replace($crlf,$lf).Replace([string][char]13,$lf)
     if ($normalized.Contains($newNormalized)) {
         Write-Host "[OK] Already applied: $Description" -ForegroundColor DarkGreen
         return
