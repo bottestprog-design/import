@@ -9,7 +9,7 @@ if ($primary.Count -eq 0) { throw 'Existing Qwen 3.5 9B was not found; no downlo
 $existing = @($tags.models | Where-Object { $_.name -eq $Model -or $_.name -like 'qwen3.5:4b-*' })
 if ($existing.Count -gt 0) { Write-Host "[OK] $($existing[0].name) already exists; no download needed."; exit 0 }
 $ram = [math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1GB, 1)
-$disk = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='D:''
+$disk = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='D:'"
 $free = if ($disk) { [math]::Round($disk.FreeSpace / 1GB, 1) } else { 0 }
 Write-Host "Detected RAM: $ram GB; free D: space: $free GB."
 if ($ram -lt 12) { throw 'At least 12 GB system RAM is recommended for this optional model.' }
