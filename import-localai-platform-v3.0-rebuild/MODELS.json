@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "ollama": {
+    "preferred_tag": "local-qwen35:latest",
+    "official_pull_tag": "qwen3.5:9b-q4_K_M",
+    "known_tags": [
+      "local-qwen35:latest",
+      "qwen3.5:9b-q4_K_M",
+      "qwen3.5:9b-q4km",
+      "qwen3.5:9b"
+    ],
+    "auto_download_when_missing": true,
+    "search_store_roots": [
+      "D:\\LocalAI\\Models",
+      "D:\\LocalAI\\Ollama\\Models",
+      "C:\\Ollama\\Models"
+    ]
+  },
+  "whisper": {
+    "model_size": "base",
+    "repository": "Systran/faster-whisper-base",
+    "auto_download_when_missing": true,
+    "required_for_text_chat": false,
+    "cache_relative_path": "Data\\cache\\whisper\\models",
+    "required_files": [
+      "config.json",
+      "model.bin",
+      "tokenizer.json",
+      "vocabulary.txt"
+    ],
+    "search_cache_roots": [
+      "D:\\LocalAI\\Models\\whisper-base",
+      "D:\\LocalAI\\Models\\faster-whisper-base",
+      "D:\\LocalAI\\Whisper\\Base"
+    ]
+  }
+}
