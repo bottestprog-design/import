@@ -208,7 +208,7 @@ function Invoke-OllamaCopy([string]$SourceTag,[string]$DestinationTag) {
         Invoke-RestMethod -Uri ($BaseUrl + '/api/copy') -Method Post -ContentType 'application/json' -Body $body -TimeoutSec 1800 | Out-Null
         return $true
     } catch {
-        Write-Host "[WARN] Could not create local alias $DestinationTag: $($_.Exception.Message)" -ForegroundColor Yellow
+        Write-Host "[WARN] Could not create local alias ${DestinationTag}: $($_.Exception.Message)" -ForegroundColor Yellow
         return $false
     }
 }
